@@ -15,23 +15,26 @@
 
 #include <SimpleUsbSerial.h>
 
-#include "ch446q_driver.h"
+#include "src/ch446q/ch446q_matrix.h"
 
-CH446Q ch446q0(PC0, PC1, PC2, PC3);
+// Chip0: PC0–PC3. Chip1: set to your board wiring (PC4–PC7 placeholder).
+CH446QMatrix matrix(PC0, PC1, PC2, PC6, PC0, PC1, PC2, PC3);
 
 void setup() {
     SerialUSB.begin();
-    ch446q0.init();
-    ch446q0.reset();
-    pinMode(PB15,OUTPUT);
+    matrix.init();
+    matrix.reset();
+    pinMode(PB15, OUTPUT);
+
+    pinMode(PA0, OUTPUT);
+    digitalWrite(PA0, HIGH);  //set Y0 to high for test
 }
 
-// the loop function runs over and over again forever
 void loop() {
-    ch446q0.switchChannel(0, 0, true);
-    digitalWrite(PB15,HIGH);
+    matrix.switchChannel(6, 0, true);
+    digitalWrite(PB15, HIGH);
     delay(1000);
-    ch446q0.switchChannel(0, 0, false);
-    digitalWrite(PB15,LOW);
+    matrix.switchChannel(6, 0, false);
+    digitalWrite(PB15, LOW);
     delay(1000);
 }
