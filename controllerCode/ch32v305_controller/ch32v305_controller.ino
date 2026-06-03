@@ -31,10 +31,10 @@ void setup() {
 }
 
 void loop() {
-    matrix.switchChannel(6, 0, true);
+    matrix.switchChannel(PIN_X6, Y_305_PA0, true);
     digitalWrite(PB15, HIGH);
     delay(1000);
-    matrix.switchChannel(6, 0, false);
+    matrix.switchChannel(PIN_X6, Y_305_PA0, false);
     digitalWrite(PB15, LOW);
     delay(1000);
 }
