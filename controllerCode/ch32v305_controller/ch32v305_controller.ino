@@ -100,28 +100,29 @@ void loop() {
           //     SerialUSB.println("b: CH552 reboot usercode");
           //   }
           //   break;
-          // case 'R':
-          // case 'r':
-          //   if (rxSerialBufferPtr == 3) {
-          //     uint8_t pin = hexToUchar(rxSerialBuffer[1]) * 10 + hexToUchar(rxSerialBuffer[2]);
-          //     uint8_t pinStatus = readPin(pin);
-          //     SerialUSB.print(rxSerialBuffer[0]);
-          //     SerialUSB.print(rxSerialBuffer[1]);
-          //     SerialUSB.print(rxSerialBuffer[2]);
-          //     SerialUSB.print((char)':');
-          //     if (pinStatus == PIN_ERROR) {
-          //       SerialUSB.println("not valid");
-          //     } else {
-          //       SerialUSB.println((char)('0' + pinStatus));
-          //       if (rxSerialBuffer[0] == 'R') {
-          //         digitalPinSubscribed = 255;
-          //       } else {
-          //         digitalPinSubscribed = pin;
-          //         digitalPinSubscribedLastPrintTime = millis();
-          //       }
-          //     }
-          //   }
-          //   break;
+          case 'R':
+          //case 'r':
+            if (rxSerialBufferPtr == 2) {
+              uint8_t pin = hexToUchar(rxSerialBuffer[1]);
+              SerialUSB.print(rxSerialBuffer[0]);
+              SerialUSB.print(rxSerialBuffer[1]);
+              SerialUSB.print((char)':');
+              if (pin < 8) {
+                // we only map PA0-PA7 to pins 0-7
+                pin = PA0 + pin;
+                uint8_t pinStatus = digitalRead(pin);
+                SerialUSB.println((char)('0' + pinStatus));
+                // if (rxSerialBuffer[0] == 'R') {
+                //   digitalPinSubscribed = 255;
+                // } else {
+                //   digitalPinSubscribed = pin;
+                //   digitalPinSubscribedLastPrintTime = millis();
+                // }
+              } else {
+                SerialUSB.println("not valid");
+              }
+            }
+            break;
           // case 'A':
           // case 'a':
           //   if (rxSerialBufferPtr == 3) {
