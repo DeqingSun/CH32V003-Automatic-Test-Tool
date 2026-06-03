@@ -20,6 +20,13 @@
 // Chip0: PC0–PC3. Chip1: set to your board wiring (PC4–PC7 placeholder).
 CH446QMatrix matrix(PC0, PC1, PC2, PC6, PC0, PC1, PC2, PC3);
 
+char rxSerialBuffer[16];
+uint8_t rxSerialBufferPtr = 0;
+uint8_t digitalPinSubscribed = 255;
+uint8_t analogPinSubscribed = 255;
+uint32_t digitalPinSubscribedLastPrintTime = 0;
+uint32_t analogPinSubscribedLastPrintTime = 0;
+
 void setup() {
     SerialUSB.begin();
     matrix.init();
@@ -31,10 +38,32 @@ void setup() {
 }
 
 void loop() {
-    matrix.switchChannel(PIN_X6, Y_305_PA0, true);
-    digitalWrite(PB15, HIGH);
-    delay(1000);
-    matrix.switchChannel(PIN_X6, Y_305_PA0, false);
-    digitalWrite(PB15, LOW);
-    delay(1000);
+  while (SerialUSB.available()) {
+    char serialChar = SerialUSB.read();
+    if ((serialChar == '\n') || (serialChar == '\r') ) {
+      rxSerialBuffer[rxSerialBufferPtr] = '\0';
+      if (rxSerialBufferPtr > 0) {
+        SerialUSB.println(rxSerialBuffer);
+
+        // other things to do here
+
+        rxSerialBufferPtr = 0;
+      }
+    } else {
+      if (rxSerialBufferPtr < (sizeof(rxSerialBuffer) - 1)) {
+        rxSerialBuffer[rxSerialBufferPtr] = serialChar;
+        rxSerialBufferPtr++;
+      } else {
+        rxSerialBuffer[rxSerialBufferPtr] = '\0';
+      }
+    }
+  }
+  SerialUSB.flush();
+
+    // matrix.switchChannel(PIN_X6, Y_305_PA0, true);
+    // digitalWrite(PB15, HIGH);
+    // delay(1000);
+    // matrix.switchChannel(PIN_X6, Y_305_PA0, false);
+    // digitalWrite(PB15, LOW);
+    // delay(1000);
 }
