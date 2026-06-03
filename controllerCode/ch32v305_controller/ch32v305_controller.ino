@@ -16,6 +16,7 @@
 #include <SimpleUsbSerial.h>
 
 #include "src/ch446q/ch446q_matrix.h"
+#include "src/util/util.h"
 
 // Chip0: PC0–PC3. Chip1: set to your board wiring (PC4–PC7 placeholder).
 CH446QMatrix matrix(PC0, PC1, PC2, PC6, PC0, PC1, PC2, PC3);
@@ -33,8 +34,8 @@ void setup() {
     matrix.reset();
     pinMode(PB15, OUTPUT);
 
-    pinMode(PA0, OUTPUT);
-    digitalWrite(PA0, HIGH);  //set Y0 to high for test
+    // pinMode(PA0, OUTPUT);
+    // digitalWrite(PA0, HIGH);  //set Y0 to high for test
 }
 
 void loop() {
@@ -43,9 +44,198 @@ void loop() {
     if ((serialChar == '\n') || (serialChar == '\r') ) {
       rxSerialBuffer[rxSerialBufferPtr] = '\0';
       if (rxSerialBufferPtr > 0) {
-        SerialUSB.println(rxSerialBuffer);
+        //SerialUSB.println(rxSerialBuffer);
+        switch (rxSerialBuffer[0])
+        {
+          case 'I':
+            if (rxSerialBufferPtr == 1) {
+              matrix.reset();
+              //restoreAllPins(); //todo: implement this
+              digitalPinSubscribed = 255;
+              analogPinSubscribed = 255;
+              SerialUSB.println("I:Init System");
+            }
+            break;
+          case 'C':
+          case 'c':
+            //connect channels on CH446Q
+            if (rxSerialBufferPtr == 4) {
+              uint8_t xChannel = hexToUchar2(&rxSerialBuffer[1]);
+              uint8_t yChannel = hexToUchar(rxSerialBuffer[3]);
+              uint8_t onOFF = (rxSerialBuffer[0] == 'C') ? 1 : 0;
 
-        // other things to do here
+              if ( (xChannel < 32) && (yChannel < 8)) {
+                matrix.switchChannel(xChannel, yChannel, onOFF);
+                SerialUSB.print(rxSerialBuffer[0]);
+                SerialUSB.print(":Turn ");
+                if (onOFF == 1) {
+                  SerialUSB.print("ON");
+                } else {
+                  SerialUSB.print("OFF");
+                }
+                SerialUSB.print(" X:");
+                SerialUSB.print(xChannel);
+                SerialUSB.print(", Y:");
+                SerialUSB.println(yChannel);
+              }
+            }
+            break;
+          // case 'B':
+          //   if (rxSerialBufferPtr == 1) {
+          //     CH552_enter_bootloader();
+          //     SerialUSB.println("B: CH552 boot mode");
+          //   }else if (rxSerialBufferPtr == 2) {
+          //     if (rxSerialBuffer[1] == 'E'){
+          //       rebootTargetInsteadOfSelfOn1200 = true;
+          //       SerialUSB.println("BE: CH552 reboot target on 1200");
+          //     }else if (rxSerialBuffer[1] == 'e'){
+          //       rebootTargetInsteadOfSelfOn1200 = false;
+          //       SerialUSB.println("Be: CH552 reboot self on 1200");
+          //     }
+          //   }
+          //   break;
+          // case 'b':
+          //   if (rxSerialBufferPtr == 1) {
+          //     CH552_reboot_usercode();
+          //     SerialUSB.println("b: CH552 reboot usercode");
+          //   }
+          //   break;
+          // case 'R':
+          // case 'r':
+          //   if (rxSerialBufferPtr == 3) {
+          //     uint8_t pin = hexToUchar(rxSerialBuffer[1]) * 10 + hexToUchar(rxSerialBuffer[2]);
+          //     uint8_t pinStatus = readPin(pin);
+          //     SerialUSB.print(rxSerialBuffer[0]);
+          //     SerialUSB.print(rxSerialBuffer[1]);
+          //     SerialUSB.print(rxSerialBuffer[2]);
+          //     SerialUSB.print((char)':');
+          //     if (pinStatus == PIN_ERROR) {
+          //       SerialUSB.println("not valid");
+          //     } else {
+          //       SerialUSB.println((char)('0' + pinStatus));
+          //       if (rxSerialBuffer[0] == 'R') {
+          //         digitalPinSubscribed = 255;
+          //       } else {
+          //         digitalPinSubscribed = pin;
+          //         digitalPinSubscribedLastPrintTime = millis();
+          //       }
+          //     }
+          //   }
+          //   break;
+          // case 'A':
+          // case 'a':
+          //   if (rxSerialBufferPtr == 3) {
+          //     uint8_t pin = hexToUchar(rxSerialBuffer[1]) * 10 + hexToUchar(rxSerialBuffer[2]);
+          //     SerialUSB.print(rxSerialBuffer[0]);
+          //     SerialUSB.print(rxSerialBuffer[1]);
+          //     SerialUSB.print(rxSerialBuffer[2]);
+          //     SerialUSB.print((char)':');
+          //     if (pin != 12) {
+          //       SerialUSB.println("not valid");
+          //     } else {
+          //       analogRead(pin);
+          //       SerialUSB.println(analogRead(pin));
+          //       if (rxSerialBuffer[0] == 'A') {
+          //         analogPinSubscribed = 255;
+          //       } else {
+          //         analogPinSubscribed = pin;
+          //         analogPinSubscribedLastPrintTime = millis();
+          //       }
+          //     }
+          //   }
+          //   break;
+          case 'W':
+            if (rxSerialBufferPtr == 3) {
+              uint8_t pin = hexToUchar(rxSerialBuffer[1]);
+              uint8_t value = hexToUchar(rxSerialBuffer[2]);
+              SerialUSB.print(rxSerialBuffer[0]);
+              SerialUSB.print(rxSerialBuffer[1]);
+              SerialUSB.print((char)':');
+              if (pin < 8) {
+                // we only map PA0-PA7 to pins 0-7
+                pin = PA0 + pin;
+                pinMode(pin, OUTPUT);
+                digitalWrite(pin, value);
+                uint8_t pinStatus = digitalRead(pin);
+                SerialUSB.println((char)('0' + pinStatus));
+              } else {
+                SerialUSB.println("not valid");
+              }
+            }
+            break;
+          // case 'w':
+          //   if (rxSerialBufferPtr == 5) {
+          //     uint8_t pin = hexToUchar(rxSerialBuffer[1]) * 10 + hexToUchar(rxSerialBuffer[2]);
+          //     uint8_t value = hexToUchar2_xdata(&rxSerialBuffer[3]);
+          //     SerialUSB.print(rxSerialBuffer[0]);
+          //     SerialUSB.print(rxSerialBuffer[1]);
+          //     SerialUSB.print(rxSerialBuffer[2]);
+          //     SerialUSB.print((char)':');
+          //     if ( (pin == 12) || (pin == 25) ) {
+          //       if (pin == 25) {
+          //         fastPWM2(value); //4K for P25
+          //       } else {
+          //         fastPWM3(value);  //20K for P12
+          //       }
+          //       SerialUSB.println((int)value);
+          //     } else {
+          //       SerialUSB.println("not valid");
+          //     }
+          //   }
+          //   break;
+          // case 'T':
+          // case 't':
+          //   //set uart baudrate
+          //   if (rxSerialBufferPtr == 2) {
+          //     uint8_t baudrateMuliplexer = hexToUchar(rxSerialBuffer[1]);
+          //     SerialUSB.print(rxSerialBuffer[0]);
+          //     SerialUSB.print((char)':');
+          //     if (baudrateMuliplexer == 0) {
+          //       SerialUSB.println("disable UART");
+          //       if (rxSerialBuffer[0] == 'T') {
+          //         disableUART0();
+          //       } else {
+          //         disableUART1();
+          //       }
+          //     } else if (baudrateMuliplexer > (115200 / 9600)) {
+          //       SerialUSB.println("not valid rate");
+          //     } else {
+          //       __xdata uint32_t baudrate = 9600L * baudrateMuliplexer;
+          //       if (rxSerialBuffer[0] == 'T') {
+          //         PIN_FUNC |= bUART0_PIN_X;
+          //         Serial0_begin(baudrate);  //RXD0/TXD0 uses P0.2/P0.3
+          //       } else {
+          //         Serial1_begin(baudrate);  //RXD1/TXD1 uses P2.6/P2.7
+          //       }
+          //       SerialUSB.println(baudrate);
+          //     }
+          //   }
+          //   break;
+          // case 'U':
+          // case 'u':
+          //   {
+          //     for (int i = 1; i < rxSerialBufferPtr; i++) {
+          //       __data char charToSend = rxSerialBuffer[i];
+          //       if (charToSend == '\\') {
+          //         if (rxSerialBuffer[i + 1] == 'n') {
+          //           charToSend = '\n';
+          //           i++;
+          //         } else if (rxSerialBuffer[i + 1] == 'r') {
+          //           charToSend = '\r';
+          //           i++;
+          //         }
+          //       }
+          //       if (rxSerialBuffer[0] == 'U') {
+          //         Serial0_write(charToSend);
+          //       } else {
+          //         Serial1_write(charToSend);
+          //       }
+          //     }
+          //   }
+          //   break;
+          default:
+            break;
+        }
 
         rxSerialBufferPtr = 0;
       }
