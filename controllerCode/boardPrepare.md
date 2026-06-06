@@ -22,4 +22,34 @@ And then, ```./minichlink -i``` can detect the target CH32V305.
 
 and the new LinkE appears!
 
+# Test Target
+
+Use jumper to connect VCC and GND. Pin 18, X17 is SWDIO
+
+```
+C117
+C087
+```
+
+And it works!
+
+```
+./minichlink -l 2C868F06B189 -i
+minichlink version - 23691953bf211f3fd8a9c60103d93dd7a4ab3d5f
+Found WCH Link
+WCH Programmer is LinkE version 2.21
+Detected CH32V003
+Flash Storage: 16 kB
+Part UUID: e0-f3-ab-cd-4a-ab-bd-eb
+Part Type: 00-30-05-10
+Read protection: disabled
+Interface Setup
+USER/RDPR  : e817/5aa5
+DATA1/DATA0: ff00/ff00
+WRPR1/WRPR0: 00ff/00ff
+WRPR3/WRPR2: 00ff/00ff
+R32_ESIG_UNIID1: e0f3abcd
+R32_ESIG_UNIID2: 4aabbdeb
+R32_ESIG_UNIID3: ffffffff
+```
 
