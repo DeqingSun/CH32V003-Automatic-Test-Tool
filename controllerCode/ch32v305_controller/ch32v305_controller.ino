@@ -23,10 +23,6 @@ CH446QMatrix matrix(PC0, PC1, PC2, PC6, PC0, PC1, PC2, PC3);
 
 char rxSerialBuffer[16];
 uint8_t rxSerialBufferPtr = 0;
-uint8_t digitalPinSubscribed = 255;
-uint8_t analogPinSubscribed = 255;
-uint32_t digitalPinSubscribedLastPrintTime = 0;
-uint32_t analogPinSubscribedLastPrintTime = 0;
 
 void setup() {
     SerialUSB.begin();
@@ -50,9 +46,10 @@ void loop() {
           case 'I':
             if (rxSerialBufferPtr == 1) {
               matrix.reset();
-              //restoreAllPins(); //todo: implement this
-              digitalPinSubscribed = 255;
-              analogPinSubscribed = 255;
+              //set all pins PA0-PA7 to INPUT
+              for (int i = 0; i < 8; i++) {
+                pinMode(PA0 + i, INPUT);
+              }
               SerialUSB.println("I:Init System");
             }
             break;
