@@ -9,6 +9,43 @@ from ch32V305CCT6_test_tool import Ch32V305CCT6_test_tool
 class TestCh32V003:
     def __init__(self):
         self.test_tool = Ch32V305CCT6_test_tool()
+        self.map_dict = {
+            "PD4": self.test_tool.SSOP20_PIN1_MAP,
+            "PD5": self.test_tool.SSOP20_PIN2_MAP,
+            "PD6": self.test_tool.SSOP20_PIN3_MAP,
+            "PD7": self.test_tool.SSOP20_PIN4_MAP,
+            "PA1": self.test_tool.SSOP20_PIN5_MAP,
+            "PA2": self.test_tool.SSOP20_PIN6_MAP,
+            "VSS": self.test_tool.SSOP20_PIN7_MAP,
+            "PD0": self.test_tool.SSOP20_PIN8_MAP,
+            "VDD": self.test_tool.SSOP20_PIN9_MAP,
+            "PC0": self.test_tool.SSOP20_PIN10_MAP,
+            "PC1": self.test_tool.SSOP20_PIN11_MAP,
+            "PC2": self.test_tool.SSOP20_PIN12_MAP,
+            "PC3": self.test_tool.SSOP20_PIN13_MAP,
+            "PC4": self.test_tool.SSOP20_PIN14_MAP,
+            "PC5": self.test_tool.SSOP20_PIN15_MAP,
+            "PC6": self.test_tool.SSOP20_PIN16_MAP,
+            "PC7": self.test_tool.SSOP20_PIN17_MAP,
+            "PD1": self.test_tool.SSOP20_PIN18_MAP,
+            "PD2": self.test_tool.SSOP20_PIN19_MAP,
+            "PD3": self.test_tool.SSOP20_PIN20_MAP,
+            "X0": self.test_tool.PIN_X0,
+            "X1": self.test_tool.PIN_X1,
+            "X2": self.test_tool.PIN_X2,
+            "X3": self.test_tool.PIN_X3,
+            "X4": self.test_tool.PIN_X4,
+            "X5": self.test_tool.PIN_X5,
+            "X6": self.test_tool.PIN_X6,
+            "304_PA0": self.test_tool.Y_305_PA0,
+            "304_PA1": self.test_tool.Y_305_PA1,
+            "304_PA2": self.test_tool.Y_305_PA2,
+            "304_PA3": self.test_tool.Y_305_PA3,
+            "304_PA4": self.test_tool.Y_305_PA4,
+            "304_PA5": self.test_tool.Y_305_PA5,
+            "304_PA6": self.test_tool.Y_305_PA6,
+            "304_PA7": self.test_tool.Y_305_PA7,
+        }
 
     def initialize(self):
         self.test_tool.connect()
@@ -24,6 +61,16 @@ class TestCh32V003:
             return True
         else:
             return False
+
+    def connectPin(self, pin_name, pin_305_gpio_name):
+        if (pin_name not in self.map_dict):
+            print("Pin not found: "+pin_name)
+            return False
+        if (pin_305_gpio_name not in self.map_dict):
+            print("Pin not found: "+pin_305_gpio_name)
+            return False
+        self.test_tool.connect_pins(self.map_dict[pin_name], self.map_dict[pin_305_gpio_name], 0.5)
+        return True
 
     def flashFirmware(self, firmware_path, wch_linke_serial_number = None):
         #check if the firmware file exists
@@ -67,5 +114,5 @@ test_ch32v003 = TestCh32V003()
 test_ch32v003.initialize()
 test_ch32v003.flashFirmware("/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/autoTestCode/sampleArtifacts/examples/blink/blink.bin")
 #connect PD0(pin8) to LED
-test_ch32v003.test_tool.connect_pins(test_ch32v003.test_tool.SSOP20_PIN8_MAP, test_ch32v003.test_tool.Y_305_PA7, 0.5)
-test_ch32v003.test_tool.connect_pins(test_ch32v003.test_tool.PIN_X6, test_ch32v003.test_tool.Y_305_PA7, 0.5)
+test_ch32v003.connectPin("PD0", "304_PA7")
+test_ch32v003.connectPin("X6", "304_PA7")
