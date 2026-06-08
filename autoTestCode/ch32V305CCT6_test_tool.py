@@ -51,6 +51,7 @@ class Ch32V305CCT6_test_tool:
         self.serial_port = None
         self.serial_buffer = ""
         self.print_serial_input = False
+        self.usb_location = None
         
 
     def connect(self, port=None):
@@ -64,8 +65,13 @@ class Ch32V305CCT6_test_tool:
                 print("CH32V30x test tool not found")
                 return False
             device = v305_port.device
+            self.usb_location = v305_port.location
         else:
             device = port
+            for listed_port in serial.tools.list_ports.comports():
+                if (listed_port.device == port):
+                    self.usb_location = listed_port.location
+                    break
         try:
             self.serial_port = serial.Serial(device, 115200, timeout=0)
         except Exception as e:
