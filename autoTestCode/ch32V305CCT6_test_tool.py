@@ -53,22 +53,26 @@ class Ch32V305CCT6_test_tool:
         self.print_serial_input = False
         
 
-    def connect(self):
-        v305_port = None
-        for port in serial.tools.list_ports.comports():
-            if ((port.serial_number == "CH32V30x")):
-                v305_port = port
-                break
-        if (v305_port == None):
-            print("CH32V30x test tool not found")
-            return False
+    def connect(self, port=None):
+        if port is None:
+            v305_port = None
+            for listed_port in serial.tools.list_ports.comports():
+                if ((listed_port.serial_number == "CH32V30x")):
+                    v305_port = listed_port
+                    break
+            if (v305_port == None):
+                print("CH32V30x test tool not found")
+                return False
+            device = v305_port.device
+        else:
+            device = port
         try:
-            self.serial_port = serial.Serial(v305_port.device, 115200, timeout=0)
+            self.serial_port = serial.Serial(device, 115200, timeout=0)
         except Exception as e:
-            print("CH32V30x test tool open failed on "+v305_port.device+" with error: "+type(e).__name__)
+            print("CH32V30x test tool open failed on "+device+" with error: "+type(e).__name__)
             return False
         if (self.serial_port == None):
-            print("CH32V30x test tool open failed on "+v305_port.device)
+            print("CH32V30x test tool open failed on "+device)
             return False
         return True
         
