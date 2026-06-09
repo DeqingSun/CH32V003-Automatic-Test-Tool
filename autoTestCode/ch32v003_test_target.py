@@ -1,12 +1,10 @@
-# test CH32V003
-
-import time, os
-import serial
-import serial.tools.list_ports
+import os
 import subprocess
+
 from ch32V305CCT6_test_tool import Ch32V305CCT6_test_tool
 
-class TestCh32V003:
+
+class Ch32V003_test_target:
     def __init__(self):
         self.test_tool = Ch32V305CCT6_test_tool()
         self.map_dict = {
@@ -98,6 +96,8 @@ class TestCh32V003:
         result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
         if not (("Detected CH32V003" in result.stdout) or ("Detected CH32V003" in result.stderr)):
             print("CH32V003 target not found")
+            # print(result.stdout)
+            # print(result.stderr)
             return False
 
         #flash the firmware
@@ -106,13 +106,6 @@ class TestCh32V003:
         if not ("Image written" in result.stdout):
             print("Firmware flashing failed")
             return False
-        
+
         self.resetMatrix()
         return True
-
-test_ch32v003 = TestCh32V003()
-test_ch32v003.initialize()
-test_ch32v003.flashFirmware("/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/autoTestCode/sampleArtifacts/examples/blink/blink.bin")
-#connect PD0(pin8) to LED
-test_ch32v003.connectPin("PD0", "304_PA7")
-test_ch32v003.connectPin("X6", "304_PA7")
