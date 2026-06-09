@@ -203,28 +203,37 @@ const uint8_t *logicAnalyzerBuffer() {
   return la_buffer;
 }
 
-static void laWriteU32LE(Stream &out, uint32_t value) {
-  uint8_t bytes[4];
-  bytes[0] = (uint8_t)(value & 0xFFU);
-  bytes[1] = (uint8_t)((value >> 8) & 0xFFU);
-  bytes[2] = (uint8_t)((value >> 16) & 0xFFU);
-  bytes[3] = (uint8_t)((value >> 24) & 0xFFU);
-  out.write(bytes, sizeof(bytes));
+static void laPrintHexByte(Stream &out, uint8_t value) {
+  static const char hex[] = "0123456789ABCDEF";
+  out.write(hex[(value >> 4) & 0x0FU]);
+  out.write(hex[value & 0x0FU]);
+}
+
+static void laPrintHexU32(Stream &out, uint32_t value) {
+  for (int shift = 28; shift >= 0; shift -= 4) {
+    static const char hex[] = "0123456789ABCDEF";
+    out.write(hex[(value >> shift) & 0x0FU]);
+  }
 }
 
 void logicAnalyzerUpload(Stream &out, uint32_t sampleCount, uint32_t rateHz) {
-  laWriteU32LE(out, LA_MAGIC);
-  laWriteU32LE(out, sampleCount);
-  laWriteU32LE(out, rateHz);
+  (void)rateHz;
 
-  uint32_t offset = 0;
-  while (offset < sampleCount) {
-    size_t chunk = sampleCount - offset;
-    if (chunk > 512U) {
-      chunk = 512U;
+  out.println("L:DATA");
+  for (uint32_t offset = 0; offset < sampleCount; offset++) {
+    if ((offset % 16U) == 0U) {
+      if (offset > 0U) {
+        out.println();
+      }
+      laPrintHexU32(out, offset);
+      out.print(':');
     }
-    out.write(la_buffer + offset, chunk);
-    offset += (uint32_t)chunk;
+    out.print(' ');
+    laPrintHexByte(out, la_buffer[offset]);
   }
+  if (sampleCount > 0U) {
+    out.println();
+  }
+  out.println("L:END");
   out.flush();
 }
