@@ -16,12 +16,13 @@
 #include <SimpleUsbSerial.h>
 
 #include "src/ch446q/ch446q_matrix.h"
+#include "src/logic_analyzer/logic_analyzer.h"
 #include "src/util/util.h"
 
 // Chip0: PC0–PC3. Chip1: set to your board wiring (PC4–PC7 placeholder).
 CH446QMatrix matrix(PC0, PC1, PC2, PC6, PC0, PC1, PC2, PC3);
 
-char rxSerialBuffer[16];
+char rxSerialBuffer[32];
 uint8_t rxSerialBufferPtr = 0;
 
 void setup() {
@@ -142,6 +143,28 @@ void loop() {
           //     }
           //   }
           //   break;
+          case 'L':
+            if (rxSerialBufferPtr == 17) {
+              uint32_t rateHz = hexToUint32(&rxSerialBuffer[1]);
+              uint32_t sampleCount = hexToUint32(&rxSerialBuffer[9]);
+              uint32_t actualRateHz = 0;
+              LogicAnalyzerResult laResult =
+                  logicAnalyzerCapture(rateHz, sampleCount, &actualRateHz);
+              if (laResult == LA_OK) {
+                SerialUSB.print("L:OK,");
+                SerialUSB.print(sampleCount);
+                SerialUSB.print(",");
+                SerialUSB.println(actualRateHz);
+                logicAnalyzerUpload(SerialUSB, sampleCount, actualRateHz);
+              } else if (laResult == LA_ERR_BAD_RATE) {
+                SerialUSB.println("L:ERR,bad_rate");
+              } else if (laResult == LA_ERR_BAD_COUNT) {
+                SerialUSB.println("L:ERR,bad_count");
+              } else if (laResult == LA_ERR_BUSY) {
+                SerialUSB.println("L:ERR,busy");
+              }
+            }
+            break;
           case 'W':
             if (rxSerialBufferPtr == 3) {
               uint8_t pin = hexToUchar(rxSerialBuffer[1]);
