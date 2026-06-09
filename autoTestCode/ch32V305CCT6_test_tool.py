@@ -217,3 +217,59 @@ class Ch32V305CCT6_test_tool:
             else:
                 return None
     
+    def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
+        command = f"L{rate_hz:08X}{sample_count:08X}\n"
+        write_response = self.write_string_wait_for_response(command, "L:Capture data...", wait_for_input_time)
+        if (wait_for_input_time == 0):
+            return None
+        if (len(write_response) == 0):
+            return None
+
+        capture_wait = wait_for_input_time + (sample_count / rate_hz)
+
+        more_response = self.write_string_wait_for_response("", "L:", capture_wait)
+        if (len(more_response) == 0):
+            return None
+
+        if (more_response.startswith("L:ERR,")):
+            return {"ok": False, "error": more_response[6:]}
+
+        if (not more_response.startswith("L:OK,")):
+            return None
+
+        try:
+            parts = more_response.split(",")
+            actual_sample_count = int(parts[1])
+            actual_rate_hz = int(parts[2])
+        except (IndexError, ValueError):
+            return None
+
+        samples = []
+        data_done = False
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < capture_wait):
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line == "L:END"):
+                    data_done = True
+                    break
+                if (line == "L:DATA" or line.startswith("L:")):
+                    continue
+                colon_pos = line.find(":")
+                if (colon_pos < 0):
+                    continue
+                for token in line[colon_pos + 1:].split():
+                    if (len(token) == 2):
+                        samples.append(int(token, 16))
+            if (data_done):
+                break
+
+        if (not data_done):
+            return None
+
+        return {
+            "ok": True,
+            "sample_count": actual_sample_count,
+            "rate_hz": actual_rate_hz,
+            "samples": samples,
+        }

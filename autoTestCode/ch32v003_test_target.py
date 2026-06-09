@@ -109,3 +109,6 @@ class Ch32V003_test_target:
 
         self.resetMatrix()
         return True
+
+    def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
+        return self.test_tool.logic_analyzer_capture(rate_hz, sample_count, wait_for_input_time)
