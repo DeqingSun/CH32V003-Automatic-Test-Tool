@@ -7,9 +7,8 @@ extern "C" {
 #include "ch32yyxx_misc.h"
 }
 
-// Upper 128K of 192K SRAM (0x20010000..0x2002FFFF). Chip must be configured for
-// FLASH-128K + RAM-192K via WCH-LinkUtility; see boardPrepare.md.
-static uint8_t * const la_buffer = (uint8_t *)0x20010000u;
+// Requires 192K RAM linker script + chip option FLASH-128K + RAM-192K (boardPrepare.md).
+static uint8_t la_buffer[LA_BUFFER_SIZE];
 
 static volatile bool la_capture_done = false;
 static volatile bool la_capture_busy = false;
