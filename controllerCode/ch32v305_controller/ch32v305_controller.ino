@@ -148,6 +148,8 @@ void loop() {
               uint32_t rateHz = hexToUint32(&rxSerialBuffer[1]);
               uint32_t sampleCount = hexToUint32(&rxSerialBuffer[9]);
               uint32_t actualRateHz = 0;
+              SerialUSB.println("L:Capture data...");
+              SerialUSB.flush();
               LogicAnalyzerResult laResult =
                   logicAnalyzerCapture(rateHz, sampleCount, &actualRateHz);
               if (laResult == LA_OK) {
