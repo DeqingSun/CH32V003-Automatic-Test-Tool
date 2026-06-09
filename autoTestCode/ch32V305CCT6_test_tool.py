@@ -295,9 +295,12 @@ class Ch32V305CCT6_test_tool:
         if (not data_done):
             return {"ok": False, "error": "Data not done"}
 
+        #split the samples into 8 channels, each sample is 8bit, represent 8 digital channels
+        samples_channels = [[(s >> i) & 1 for s in samples] for i in range(8)]
+
         return {
             "ok": True,
             "sample_count": actual_sample_count,
             "rate_hz": actual_rate_hz,
-            "samples": samples,
+            "samples": samples_channels,
         }
