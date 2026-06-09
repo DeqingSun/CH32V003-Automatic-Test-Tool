@@ -219,11 +219,8 @@ class Ch32V305CCT6_test_tool:
     
     def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
         command = f"L{rate_hz:08X}{sample_count:08X}\n"
-        write_response = self.write_string_wait_for_response(command, "L:Capture data...", wait_for_input_time)
-        if (wait_for_input_time == 0):
-            return None
-        if (len(write_response) == 0):
-            return None
+        self.serial_port.write(command.encode('ascii'))
+        self.serial_port.flush()
 
         if (rate_hz > 0):
             capture_wait = max(wait_for_input_time, (sample_count / rate_hz) + 2.0)
@@ -252,6 +249,9 @@ class Ch32V305CCT6_test_tool:
                         actual_rate_hz = int(parts[2])
                     except (IndexError, ValueError):
                         result_line = None
+                return
+
+            if (line.startswith("L:Capture data...")):
                 return
 
             if (line.startswith("L:ERR,") or line.startswith("L:OK,")):
@@ -287,13 +287,13 @@ class Ch32V305CCT6_test_tool:
                 break
 
         if (result_line is None):
-            return None
+            return {"ok": False, "error": "No result line"}
 
         if (result_line.startswith("L:ERR,")):
             return {"ok": False, "error": result_line[6:]}
 
         if (not data_done):
-            return None
+            return {"ok": False, "error": "Data not done"}
 
         return {
             "ok": True,
