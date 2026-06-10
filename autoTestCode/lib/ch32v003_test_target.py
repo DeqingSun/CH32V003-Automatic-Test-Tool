@@ -70,19 +70,24 @@ class Ch32V003_test_target:
         self.test_tool.connect_pins(self.map_dict[pin_name], self.map_dict[pin_305_gpio_name], 0.5)
         return True
 
+    def locateMinichlink(self):
+        auto_test_code_directory = os.path.dirname(os.path.abspath(__file__))
+        tool_binary_directory = os.path.join(auto_test_code_directory, "toolBinary")
+        if (not os.path.exists(os.path.join(tool_binary_directory, "minichlink"))):
+            print("Minichlink not found in toolBinary folder")
+            return False
+        return os.path.join(tool_binary_directory, "minichlink")
+
     def flashFirmware(self, firmware_path, wch_linke_serial_number = None):
         #check if the firmware file exists
         if (not os.path.exists(firmware_path)):
             print("Firmware file not found: "+firmware_path)
             return False
         #check if the minichlink is ready in toolBinary folder
-        auto_test_code_directory = os.path.dirname(os.path.abspath(__file__))
-        tool_binary_directory = os.path.join(auto_test_code_directory, "toolBinary")
-        if (not os.path.exists(os.path.join(tool_binary_directory, "minichlink"))):
-            print("Minichlink not found in toolBinary folder")
+        minichlink = self.locateMinichlink()
+        if (not minichlink):
+            print("Minichlink not found")
             return False
-
-        minichlink = os.path.join(tool_binary_directory, "minichlink")
 
         #for ch32v003, the SWIO is on PD1, pin 18 on TSSOP20 package
         #we can route the SWIO to on board WCH-LINKE SWDIO via any input gpio on CH32V305
@@ -114,3 +119,38 @@ class Ch32V003_test_target:
 
     def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
         return self.test_tool.logic_analyzer_capture(rate_hz, sample_count, wait_for_input_time)
+
+    def set_3V3_power(self, on_off, wch_linke_serial_number = None):
+        # minichlink -k3 -C linke
+        # minichlink -kt -C linke
+        minichlink = self.locateMinichlink()
+        if (not minichlink):
+            print("Minichlink not found")
+            return False
+
+        command_minichlink = f"{minichlink} -k{3 if on_off else 't'} -C linke"
+
+        if (wch_linke_serial_number is not None):
+            command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
+        result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
+        if not ("Skipping programmer initialization" in result.stdout):
+            print("Failed to set 3V3 power")
+            return False
+        return True
+
+    def set_5V_power(self, on_off, wch_linke_serial_number = None):
+        # minichlink -k5 -C linke
+        # minichlink -kf -C linke
+        minichlink = self.locateMinichlink()
+        if (not minichlink):
+            print("Minichlink not found")
+            return False
+
+        command_minichlink = f"{minichlink} -k{5 if on_off else 'f'} -C linke"
+        if (wch_linke_serial_number is not None):
+            command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
+        result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
+        if not ("Skipping programmer initialization" in result.stdout):
+            print("Failed to set 5V power")
+            return False
+        return True
