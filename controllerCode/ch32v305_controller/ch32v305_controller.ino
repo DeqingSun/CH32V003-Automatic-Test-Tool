@@ -124,28 +124,21 @@ void loop() {
               }
             }
             break;
-          // case 'A':
-          // case 'a':
-          //   if (rxSerialBufferPtr == 3) {
-          //     uint8_t pin = hexToUchar(rxSerialBuffer[1]) * 10 + hexToUchar(rxSerialBuffer[2]);
-          //     SerialUSB.print(rxSerialBuffer[0]);
-          //     SerialUSB.print(rxSerialBuffer[1]);
-          //     SerialUSB.print(rxSerialBuffer[2]);
-          //     SerialUSB.print((char)':');
-          //     if (pin != 12) {
-          //       SerialUSB.println("not valid");
-          //     } else {
-          //       analogRead(pin);
-          //       SerialUSB.println(analogRead(pin));
-          //       if (rxSerialBuffer[0] == 'A') {
-          //         analogPinSubscribed = 255;
-          //       } else {
-          //         analogPinSubscribed = pin;
-          //         analogPinSubscribedLastPrintTime = millis();
-          //       }
-          //     }
-          //   }
-          //   break;
+          case 'A':
+          //case 'a':
+            if (rxSerialBufferPtr == 2) {
+              uint8_t pin = hexToUchar(rxSerialBuffer[1]);
+              SerialUSB.print(rxSerialBuffer[0]);
+              SerialUSB.print(rxSerialBuffer[1]);
+              SerialUSB.print((char)':');
+              if (pin >= 8) {
+                SerialUSB.println("not valid");
+              } else {
+                analogRead(pin);
+                SerialUSB.println(analogRead(pin));
+              }
+            }
+            break;
           case 'L':
             if (rxSerialBufferPtr == 17) {
               uint32_t rateHz = hexToUint32(&rxSerialBuffer[1]);
