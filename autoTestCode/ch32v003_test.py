@@ -17,5 +17,5 @@ else:
     print("Firmware flashing failed")
     exit(1)
 #connect PD0(pin8) to LED
-# test_ch32v003_test_target.connectPin("PD0", "304_PA7")
-# test_ch32v003_test_target.connectPin("X6", "304_PA7")
+# test_ch32v003_test_target.connectPin("PD0", "305_PA7")
+# test_ch32v003_test_target.connectPin("X6", "305_PA7")

@@ -35,14 +35,19 @@ class Ch32V003_test_target:
             "X4": self.test_tool.PIN_X4,
             "X5": self.test_tool.PIN_X5,
             "X6": self.test_tool.PIN_X6,
-            "304_PA0": self.test_tool.Y_305_PA0,
-            "304_PA1": self.test_tool.Y_305_PA1,
-            "304_PA2": self.test_tool.Y_305_PA2,
-            "304_PA3": self.test_tool.Y_305_PA3,
-            "304_PA4": self.test_tool.Y_305_PA4,
-            "304_PA5": self.test_tool.Y_305_PA5,
-            "304_PA6": self.test_tool.Y_305_PA6,
-            "304_PA7": self.test_tool.Y_305_PA7,
+            "WCH_LINKE_SWDIO": self.test_tool.WCH_LINKE_SWDIO,
+            "WCH_LINKE_SWCLK": self.test_tool.WCH_LINKE_SWCLK,
+            "WCH_LINKE_TX": self.test_tool.WCH_LINKE_TX,
+            "WCH_LINKE_RX": self.test_tool.WCH_LINKE_RX,
+            "WCH_LINKE_RST": self.test_tool.WCH_LINKE_RST,
+            "305_PA0": self.test_tool.Y_305_PA0,
+            "305_PA1": self.test_tool.Y_305_PA1,
+            "305_PA2": self.test_tool.Y_305_PA2,
+            "305_PA3": self.test_tool.Y_305_PA3,
+            "305_PA4": self.test_tool.Y_305_PA4,
+            "305_PA5": self.test_tool.Y_305_PA5,
+            "305_PA6": self.test_tool.Y_305_PA6,
+            "305_PA7": self.test_tool.Y_305_PA7,
         }
 
     def initialize(self):
@@ -91,8 +96,8 @@ class Ch32V003_test_target:
 
         #for ch32v003, the SWIO is on PD1, pin 18 on TSSOP20 package
         #we can route the SWIO to on board WCH-LINKE SWDIO via any input gpio on CH32V305
-        self.test_tool.connect_pins(self.test_tool.SSOP20_PIN18_MAP, self.test_tool.Y_305_PA7, 0.5)
-        self.test_tool.connect_pins(self.test_tool.WCH_LINKE_SWDIO, self.test_tool.Y_305_PA7, 0.5)
+        self.test_tool.connect_pins(self.test_tool.SSOP20_PIN18_MAP, self.test_tool.Y_305_PA7, 0.5) #C117
+        self.test_tool.connect_pins(self.test_tool.WCH_LINKE_SWDIO, self.test_tool.Y_305_PA7, 0.5)  #C087
 
         #use the minichlink to flash the firmware
         #sample command: ./toolBinary/minichlink -C linke -l 2C868F06B189
@@ -154,3 +159,17 @@ class Ch32V003_test_target:
             print("Failed to set 5V power")
             return False
         return True
+
+    def debug_terminal_command(self, wch_linke_serial_number = None):
+        # minichlink -d -C linke
+        minichlink = self.locateMinichlink()
+        if (not minichlink):
+            print("Minichlink not found")
+            return False
+
+        command_minichlink = f"{minichlink} -d -C linke"
+        if (wch_linke_serial_number is not None):
+            command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
+        command_minichlink = command_minichlink + " -T"
+        return command_minichlink
+        
