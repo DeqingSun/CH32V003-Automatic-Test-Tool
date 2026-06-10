@@ -47,6 +47,9 @@ void loop() {
           case 'I':
             if (rxSerialBufferPtr == 1) {
               matrix.reset();
+              //DAC need to be disabled with ALT2
+              pinMode(PA4_ALT2,INPUT);
+              pinMode(PA5_ALT2,INPUT);
               //set all pins PA0-PA7 to INPUT
               for (int i = 0; i < 8; i++) {
                 pinMode(PA0 + i, INPUT);
@@ -187,15 +190,19 @@ void loop() {
             }
             break;
           case 'w':
-            if (rxSerialBufferPtr == 4) {
-              uint8_t pin = hexToUchar(rxSerialBuffer[1]);
-              uint8_t value = hexToUchar2(&rxSerialBuffer[2]);
+            if (rxSerialBufferPtr == 6) {
+              uint16_t pin = hexToUchar(rxSerialBuffer[1]);
+              uint16_t value = hexToUint16(&rxSerialBuffer[2]); //12bit value for ADC, DAC and PWM
               SerialUSB.print(rxSerialBuffer[0]);
               SerialUSB.print(rxSerialBuffer[1]);
               SerialUSB.print((char)':');
               if ( pin < 8 ) {
-                pin = PA0 + pin;
-                analogWrite(pin, value);  //PA1 ff->6.22%
+                if (pin == 4 || pin == 5) {
+                  pin = (PA0 + pin) | ALT2; //DAC uses PA4_ALT2 and PA5_ALT2
+                }else{
+                  pin = PA0 + pin;
+                }
+                analogWrite(pin, value);
                 SerialUSB.println((int)value);
               } else {
                 SerialUSB.println("not valid");
