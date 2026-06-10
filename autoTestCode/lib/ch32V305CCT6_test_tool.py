@@ -174,8 +174,8 @@ class Ch32V305CCT6_test_tool:
                 return None
             
     def analog_write(self, pin, value, wait_for_input_time=0):
-        command = f"w{pin:02d}{value:02x}\n"
-        write_response = self.write_string_wait_for_response(command, f"w{pin:02d}:", wait_for_input_time)
+        command = f"w{pin:01d}{value:04x}\n"
+        write_response = self.write_string_wait_for_response(command, f"w{pin:01d}:", wait_for_input_time)
         if (wait_for_input_time == 0):
             return True
         else:
