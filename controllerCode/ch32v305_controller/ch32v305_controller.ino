@@ -186,26 +186,22 @@ void loop() {
               }
             }
             break;
-          // case 'w':
-          //   if (rxSerialBufferPtr == 5) {
-          //     uint8_t pin = hexToUchar(rxSerialBuffer[1]) * 10 + hexToUchar(rxSerialBuffer[2]);
-          //     uint8_t value = hexToUchar2_xdata(&rxSerialBuffer[3]);
-          //     SerialUSB.print(rxSerialBuffer[0]);
-          //     SerialUSB.print(rxSerialBuffer[1]);
-          //     SerialUSB.print(rxSerialBuffer[2]);
-          //     SerialUSB.print((char)':');
-          //     if ( (pin == 12) || (pin == 25) ) {
-          //       if (pin == 25) {
-          //         fastPWM2(value); //4K for P25
-          //       } else {
-          //         fastPWM3(value);  //20K for P12
-          //       }
-          //       SerialUSB.println((int)value);
-          //     } else {
-          //       SerialUSB.println("not valid");
-          //     }
-          //   }
-          //   break;
+          case 'w':
+            if (rxSerialBufferPtr == 4) {
+              uint8_t pin = hexToUchar(rxSerialBuffer[1]);
+              uint8_t value = hexToUchar2(&rxSerialBuffer[2]);
+              SerialUSB.print(rxSerialBuffer[0]);
+              SerialUSB.print(rxSerialBuffer[1]);
+              SerialUSB.print((char)':');
+              if ( pin < 8 ) {
+                pin = PA0 + pin;
+                analogWrite(pin, value);  //PA1 ff->6.22%
+                SerialUSB.println((int)value);
+              } else {
+                SerialUSB.println("not valid");
+              }
+            }
+            break;
           // case 'T':
           // case 't':
           //   //set uart baudrate
