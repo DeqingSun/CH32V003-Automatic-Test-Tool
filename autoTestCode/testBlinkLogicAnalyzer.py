@@ -1,4 +1,4 @@
-from ch32v003_test_target import Ch32V003_test_target
+from lib.ch32v003_test_target import Ch32V003_test_target
 
 test_ch32v003_test_target = Ch32V003_test_target()
 test_ch32v003_test_target.initialize()

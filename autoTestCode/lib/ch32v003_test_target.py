@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from ch32V305CCT6_test_tool import Ch32V305CCT6_test_tool
+from .ch32V305CCT6_test_tool import Ch32V305CCT6_test_tool
 
 
 class Ch32V003_test_target:
@@ -76,11 +76,14 @@ class Ch32V003_test_target:
             print("Firmware file not found: "+firmware_path)
             return False
         #check if the minichlink is ready in toolBinary folder
-        current_script_directory = os.path.dirname(os.path.abspath(__file__))
-        tool_binary_directory = os.path.join(current_script_directory, "toolBinary")
+        auto_test_code_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        print(auto_test_code_directory)
+        tool_binary_directory = os.path.join(auto_test_code_directory, "toolBinary")
         if (not os.path.exists(os.path.join(tool_binary_directory, "minichlink"))):
             print("Minichlink not found in toolBinary folder")
             return False
+
+        minichlink = os.path.join(tool_binary_directory, "minichlink")
 
         #for ch32v003, the SWIO is on PD1, pin 18 on TSSOP20 package
         #we can route the SWIO to on board WCH-LINKE SWDIO via any input gpio on CH32V305
@@ -89,7 +92,7 @@ class Ch32V003_test_target:
 
         #use the minichlink to flash the firmware
         #sample command: ./toolBinary/minichlink -C linke -l 2C868F06B189
-        command_minichlink = f"./toolBinary/minichlink -C linke"
+        command_minichlink = f"{minichlink} -C linke"
         if (wch_linke_serial_number is not None):
             command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
         #run command and see if there is "Detected CH32V003" in the output
