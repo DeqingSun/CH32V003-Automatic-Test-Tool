@@ -76,8 +76,7 @@ class Ch32V003_test_target:
             print("Firmware file not found: "+firmware_path)
             return False
         #check if the minichlink is ready in toolBinary folder
-        auto_test_code_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        print(auto_test_code_directory)
+        auto_test_code_directory = os.path.dirname(os.path.abspath(__file__))
         tool_binary_directory = os.path.join(auto_test_code_directory, "toolBinary")
         if (not os.path.exists(os.path.join(tool_binary_directory, "minichlink"))):
             print("Minichlink not found in toolBinary folder")
