@@ -7,6 +7,9 @@ Dependencies:
 
 import sys
 import subprocess
+
+import serial
+import serial.tools.list_ports
 import usb.core
 import usb.util
 from usb.core import USBError
@@ -18,6 +21,9 @@ wch_linke_firmware_path = "/Users/deqinguser/Documents/GitHub/CH32V003-Automatic
 HUB_VID = 0x1A86
 HUB_PID = 0x8091
 HUB_PORT_COUNT = 4
+
+CH32V305_CONTROLLER_VID = 0x1209
+CH32V305_CONTROLLER_PID = 0xC550
 
 MACOS_LIBUSB_PATHS = (
     "/opt/homebrew/lib/libusb-1.0.dylib",
@@ -96,6 +102,21 @@ def devices_on_hub_ports(hub):
     return ports
 
 
+def find_ch32v305_controller_port():
+    """Return serial device path for CH32V305 controller (1209:c550), or None."""
+    matches = []
+    for port in serial.tools.list_ports.comports():
+        if port.vid == CH32V305_CONTROLLER_VID and port.pid == CH32V305_CONTROLLER_PID:
+            matches.append(port)
+    if not matches:
+        return None
+    if len(matches) > 1:
+        print(
+            f"Multiple CH32V305 controller serial ports found; using {matches[0].device}",
+            file=sys.stderr,
+        )
+    return matches[0].device
+
 
 def main():
     backend = _get_usb_backend()
@@ -122,7 +143,7 @@ def main():
     ch32v305_controller_device_already_present = False
     if len(devices[3]) == 1:
         device = devices[3][0]
-        if device["vid"] == 0x1209 and device["pid"] == 0xc550:
+        if device["vid"] == CH32V305_CONTROLLER_VID and device["pid"] == CH32V305_CONTROLLER_PID:
             ch32v305_controller_device_already_present = True
     if ch32v305_controller_device_already_present:
         print("CH32V305 controller device already present on port 3.")
@@ -130,10 +151,14 @@ def main():
         print("CH32V305 controller device not found on port 3.")
         print("Expect off board WCH-LinkE connected to pin header next to CH32V305CCT6.")
         #run minichlink -C linke -i to check if WCH-LinkE is connected, capture the output
-        output = subprocess.check_output(
-            [minichlink_path, "-C", "linke", "-i"],
-            stderr=subprocess.STDOUT,
-        ).decode("utf-8")
+        try:
+            output = subprocess.check_output(
+                [minichlink_path, "-C", "linke", "-i"],
+                stderr=subprocess.STDOUT,
+            ).decode("utf-8")
+        except subprocess.CalledProcessError as e:
+            print(f"Error running minichlink -C linke -i: {e}")
+            sys.exit(1)
         #check if output contains "Detected CH32V305" and "Flash Storage: 288 kB"
         if not "Detected CH32V305" in output or not "Flash Storage: 288 kB" in output:
             print("WCH-LinkE not detected. Please connect WCH-LinkE to pin header next to CH32V305CCT6.")
@@ -165,14 +190,42 @@ def main():
     if wch_linke_device_already_present:
         print("WCH LinkE device already present on port 4.")
     else:
-        #flash
-        pass
-
-
-
-
-
-
+        print("Ready to flash on-board WCH-LinkE firmware to port 4.")
+        print("Please connect off-board WCH-LinkE clock to SWCLK to X0, SWDIO to X1.")
+        controller_port = find_ch32v305_controller_port()
+        if controller_port is None:
+            print(
+                f"CH32V305 controller serial port not found "
+                f"({CH32V305_CONTROLLER_VID:04x}:{CH32V305_CONTROLLER_PID:04x})"
+            )
+            sys.exit(1)
+        serial_port = serial.Serial(port=controller_port, baudrate=115200, timeout=1)
+        #send "I\n" to controller
+        serial_port.write(b"I\n")
+        serial_port.write(b"C006\n")
+        serial_port.write(b"C096\n")
+        serial_port.write(b"C017\n")
+        serial_port.write(b"C087\n")
+        #flush and close
+        serial_port.flush()
+        serial_port.close()
+        try:
+            output = subprocess.check_output(
+                [minichlink_path, "-C", "linke", "-i"],
+                stderr=subprocess.STDOUT,
+            ).decode("utf-8")
+        except subprocess.CalledProcessError as e:
+            print(f"Error running minichlink -C linke -i: {e}")
+            sys.exit(1)
+        if not "Detected CH32V305" in output or not "Flash Storage: 128 kB" in output:
+            print("CH32V305FBP6 not detected. Please check connection to CH32V305FBP6.")
+            sys.exit(1)
+        #flash wch_linke_firmware_path to CH32V305FBP6
+        subprocess.check_output(
+            [minichlink_path, "-C", "linke", "-w", wch_linke_firmware_path, "0x08000000", "-b"],
+            stderr=subprocess.STDOUT,
+        ).decode("utf-8")
+        print("WCH-LinkE firmware flashed to CH32V305FBP6.")
 
 if __name__ == "__main__":
     main()
