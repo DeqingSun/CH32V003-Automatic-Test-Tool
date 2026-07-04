@@ -51,3 +51,12 @@ then
 then
 
 ```sudo systemctl start actions-runner.service```
+
+Then we added necessary software package on Pi:
+
+```
+sudo apt install python3-usb
+sudo apt install python3-serial
+sudo apt install git
+sudo apt install libusb-1.0-0-dev libudev-dev
+```
