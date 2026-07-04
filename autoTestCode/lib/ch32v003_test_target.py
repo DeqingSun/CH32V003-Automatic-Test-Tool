@@ -2,6 +2,7 @@ import os
 import subprocess
 
 from .ch32V305CCT6_test_tool import Ch32V305CCT6_test_tool
+from .minichlink_util import locate_minichlink
 
 
 class Ch32V003_test_target:
@@ -76,12 +77,7 @@ class Ch32V003_test_target:
         return True
 
     def locateMinichlink(self):
-        auto_test_code_directory = os.path.dirname(os.path.abspath(__file__))
-        tool_binary_directory = os.path.join(auto_test_code_directory, "toolBinary")
-        if (not os.path.exists(os.path.join(tool_binary_directory, "minichlink"))):
-            print("Minichlink not found in toolBinary folder")
-            return False
-        return os.path.join(tool_binary_directory, "minichlink")
+        return locate_minichlink()
 
     def flashFirmware(self, firmware_path, wch_linke_serial_number = None):
         #check if the firmware file exists
@@ -100,7 +96,7 @@ class Ch32V003_test_target:
         self.test_tool.connect_pins(self.test_tool.WCH_LINKE_SWDIO, self.test_tool.Y_305_PA7, 0.5)  #C087
 
         #use the minichlink to flash the firmware
-        #sample command: ./toolBinary/minichlink -C linke -l 2C868F06B189
+        #sample command: ./toolBinary/minichlink_mac -C linke -l 2C868F06B189
         command_minichlink = f"{minichlink} -C linke"
         if (wch_linke_serial_number is not None):
             command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"

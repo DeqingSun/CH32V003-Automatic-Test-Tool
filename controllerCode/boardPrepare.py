@@ -6,6 +6,7 @@ Dependencies:
 """
 
 import sys
+import os
 import subprocess
 
 import serial
@@ -14,7 +15,12 @@ import usb.core
 import usb.util
 from usb.core import USBError
 
-minichlink_path = "/Users/deqinguser/Documents/GitHub/ch32fun/minichlink/minichlink"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "autoTestCode"))
+from lib.minichlink_util import locate_minichlink
+
+minichlink_path = locate_minichlink()
+if not minichlink_path:
+    sys.exit(1)
 ch32v305_controller_firmware_path = "/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/controllerCode/ch32v305_controller/build/ch32v305_controller_20260629.bin"
 wch_linke_firmware_path = "/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/controllerCode/reference/WCH-LinkE-APP-IAP.bin"
 

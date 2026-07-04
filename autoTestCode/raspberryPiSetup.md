@@ -59,4 +59,7 @@ sudo apt install python3-usb
 sudo apt install python3-serial
 sudo apt install git
 sudo apt install libusb-1.0-0-dev libudev-dev
+curl -L -o /tmp/99-minichlink.rules https://raw.githubusercontent.com/cnlohr/ch32fun/refs/heads/master/minichlink/99-minichlink.rules
+sudo cp /tmp/99-minichlink.rules /etc/udev/rules.d/99-minichlink.rules
+sudo chmod 644 /etc/udev/rules.d/99-minichlink.rules
 ```
