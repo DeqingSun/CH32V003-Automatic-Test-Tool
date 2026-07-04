@@ -6,7 +6,6 @@ import subprocess
 import time
 
 from lib.ch32v003_test_target import Ch32V003_test_target
-from lib.logic_analyzer_util import LogicAnalyzerUtil
 
 class LineBufferedReader:
     def __init__(self, proc):

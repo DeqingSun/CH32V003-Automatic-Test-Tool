@@ -1,13 +1,9 @@
-import matplotlib.pyplot as plt
-
 class LogicAnalyzerUtil:
-    def __init__(self):
-        self.logic_analyzer_capture = None
-
     def __init__(self, logic_analyzer_capture):
         self.logic_analyzer_capture = logic_analyzer_capture
 
     def plot_logic_analyzer_capture(self, xSize=10, ySize=10):
+        import matplotlib.pyplot as plt
 
         # Resistor color code: digit 0–7 maps to PA0–PA7
         RESISTOR_COLORS = [
