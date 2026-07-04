@@ -1,5 +1,7 @@
 # Fresh board prepare
 
+![flash header](imgs/boardPrepare/flashHeader.jpg)
+
 Connect GND/DATA/CLK of a WCH-LinkE to the header next to CH32V305CCT6.
 
 run ```./minichlink -C linke -i``` and you should see ```Detected CH32V305``` and ```Flash Storage: 288 kB```.

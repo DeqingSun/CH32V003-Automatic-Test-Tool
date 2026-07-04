@@ -13,15 +13,15 @@ SSH should be available after Raspberry Pi boot up, even in headless config.
 
 Click "Settings" -> "Action - Runners" -> "New self-hosted runner"
 
-![create new runner](imgs/createNewRunner.png)
+![create new runner](imgs/raspberryPiSetup/createNewRunner.png)
 
 Choose "Linux" -> "ARM64", and Github will generate shell command for Raspberry Pi.
 
-![add new selfhosted runner](imgs/addNewSelfhostedRunner.png)
+![add new selfhosted runner](imgs/raspberryPiSetup/addNewSelfhostedRunner.png)
 
 After authentication and run the runner, the runner should be added.
 
-![runner added](imgs/runnerAdded.png)
+![runner added](imgs/raspberryPiSetup/runnerAdded.png)
 
 Autorun runner after reboot: run ```sudo nano /etc/systemd/system/actions-runner.service``` add
 
