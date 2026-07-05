@@ -121,6 +121,9 @@ class Ch32V003_test_target:
     def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
         return self.test_tool.logic_analyzer_capture(rate_hz, sample_count, wait_for_input_time)
 
+    def analog_capture(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
+        return self.test_tool.analog_capture(rate_hz, sample_count, channel_mask, wait_for_input_time)
+
     def set_3V3_power(self, on_off, wch_linke_serial_number = None):
         # minichlink -k3 -C linke
         # minichlink -kt -C linke

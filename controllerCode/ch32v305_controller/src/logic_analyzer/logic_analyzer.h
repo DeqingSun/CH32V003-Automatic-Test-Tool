@@ -13,6 +13,7 @@ enum LogicAnalyzerResult {
   LA_ERR_BAD_COUNT,
 };
 
+bool logicAnalyzerIsBusy();
 LogicAnalyzerResult logicAnalyzerCapture(uint32_t rateHz, uint32_t sampleCount,
                                          uint32_t *actualRateHz);
 const uint8_t *logicAnalyzerBuffer();

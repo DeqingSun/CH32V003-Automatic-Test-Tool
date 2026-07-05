@@ -1,5 +1,7 @@
 #include "logic_analyzer.h"
 
+bool analogCaptureIsBusy();
+
 extern "C" {
 #include "ch32yyxx_dma.h"
 #include "ch32yyxx_tim.h"
@@ -148,9 +150,13 @@ extern "C" void DMA2_Channel4_IRQHandler(void) {
   la_capture_done = true;
 }
 
+bool logicAnalyzerIsBusy() {
+  return la_capture_busy;
+}
+
 LogicAnalyzerResult logicAnalyzerCapture(uint32_t rateHz, uint32_t sampleCount,
                                          uint32_t *actualRateHz) {
-  if (la_capture_busy) {
+  if (la_capture_busy || analogCaptureIsBusy()) {
     return LA_ERR_BUSY;
   }
   if (sampleCount == 0 || sampleCount > LA_BUFFER_SIZE) {

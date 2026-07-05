@@ -32,4 +32,41 @@ class LogicAnalyzerUtil:
         axes[-1].set_xlabel("Time (ms)")
         fig.tight_layout()
         return fig
+
+    def plot_analog_capture(self, xSize=10, ySize=10):
+        import matplotlib.pyplot as plt
+
+        RESISTOR_COLORS = [
+            "#1a1a1a",
+            "#8B4513",
+            "#E60000",
+            "#FF8C00",
+            "#D4AF00",
+            "#228B22",
+            "#1040C0",
+            "#7B2D8E",
+        ]
+
+        sample_count = self.logic_analyzer_capture["sample_count"]
+        rate_hz = self.logic_analyzer_capture["rate_hz"]
+        channels = self.logic_analyzer_capture["channels"]
+        samples = self.logic_analyzer_capture["samples"]
+        time_ms = [i * 1000.0 / rate_hz for i in range(sample_count)]
+
+        channel_count = len(channels)
+        fig, axes = plt.subplots(channel_count, 1, sharex=True, figsize=(xSize, ySize))
+        if (channel_count == 1):
+            axes = [axes]
+
+        for index, ax in enumerate(axes):
+            channel = channels[index]
+            color = RESISTOR_COLORS[channel]
+            ax.plot(time_ms, samples[index], color=color)
+            ax.set_ylabel(f"PA{channel}", fontsize=8, color=color)
+            ax.set_ylim(-100, 4200)
+            ax.tick_params(axis="y", labelsize=8)
+
+        axes[-1].set_xlabel("Time (ms)")
+        fig.tight_layout()
+        return fig
         

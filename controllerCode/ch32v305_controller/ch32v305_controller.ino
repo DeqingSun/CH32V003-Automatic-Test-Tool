@@ -17,6 +17,7 @@
 
 #include "src/ch446q/ch446q_matrix.h"
 #include "src/logic_analyzer/logic_analyzer.h"
+#include "src/analog_capture/analog_capture.h"
 #include "src/util/util.h"
 
 // Chip0: PC0–PC3. Chip1: set to your board wiring (PC4–PC7 placeholder).
@@ -160,6 +161,45 @@ void loop() {
                 SerialUSB.println("L:ERR,bad_count");
               } else if (laResult == LA_ERR_BUSY) {
                 SerialUSB.println("L:ERR,busy");
+              }
+            }
+            break;
+          case 'M':
+            if (rxSerialBufferPtr == 19) {
+              uint32_t rateHz = hexToUint32(&rxSerialBuffer[1]);
+              uint32_t sampleCount = hexToUint32(&rxSerialBuffer[9]);
+              uint8_t channelMask = hexToUchar2(&rxSerialBuffer[17]);
+              uint32_t actualRateHz = 0;
+              uint8_t numChannels = 0;
+              for (uint8_t i = 0; i < 8; i++) {
+                if (channelMask & (1U << i)) {
+                  numChannels++;
+                }
+              }
+              SerialUSB.println("M:Capture data...");
+              SerialUSB.flush();
+              AnalogCaptureResult acResult =
+                  analogCapture(rateHz, sampleCount, channelMask, &actualRateHz);
+              if (acResult == AC_OK) {
+                SerialUSB.print("M:OK,");
+                SerialUSB.print(sampleCount);
+                SerialUSB.print(",");
+                SerialUSB.print(actualRateHz);
+                SerialUSB.print(",");
+                if (channelMask < 0x10U) {
+                  SerialUSB.print('0');
+                }
+                SerialUSB.println(channelMask, HEX);
+                analogCaptureUpload(SerialUSB, sampleCount, channelMask,
+                                    numChannels);
+              } else if (acResult == AC_ERR_BAD_RATE) {
+                SerialUSB.println("M:ERR,bad_rate");
+              } else if (acResult == AC_ERR_BAD_COUNT) {
+                SerialUSB.println("M:ERR,bad_count");
+              } else if (acResult == AC_ERR_BAD_CHANNELS) {
+                SerialUSB.println("M:ERR,bad_channels");
+              } else if (acResult == AC_ERR_BUSY) {
+                SerialUSB.println("M:ERR,busy");
               }
             }
             break;

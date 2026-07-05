@@ -304,3 +304,121 @@ class Ch32V305CCT6_test_tool:
             "rate_hz": actual_rate_hz,
             "samples": samples_channels,
         }
+
+    @staticmethod
+    def channel_mask_from_pins(pins):
+        mask = 0
+        for pin in pins:
+            if (pin < 0) or (pin > 7):
+                raise ValueError("pin must be 0-7")
+            mask |= (1 << pin)
+        return mask
+
+    @staticmethod
+    def channels_from_mask(channel_mask):
+        return [i for i in range(8) if (channel_mask & (1 << i))]
+
+    def analog_capture(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
+        command = f"M{rate_hz:08X}{sample_count:08X}{channel_mask:02X}\n"
+        self.serial_port.write(command.encode('ascii'))
+        self.serial_port.flush()
+
+        num_channels = bin(channel_mask).count("1")
+        if (rate_hz > 0):
+            capture_wait = max(wait_for_input_time, (sample_count / rate_hz) + 2.0)
+        else:
+            capture_wait = wait_for_input_time
+
+        result_line = None
+        actual_sample_count = None
+        actual_rate_hz = None
+        actual_channel_mask = None
+        time_samples = []
+        data_started = False
+        data_done = False
+
+        def process_line(line):
+            nonlocal result_line, actual_sample_count, actual_rate_hz
+            nonlocal actual_channel_mask, time_samples, data_started, data_done
+
+            if (result_line is None):
+                if (line.startswith("M:ERR,")):
+                    result_line = line
+                elif (line.startswith("M:OK,")):
+                    result_line = line
+                    try:
+                        parts = line.split(",")
+                        actual_sample_count = int(parts[1])
+                        actual_rate_hz = int(parts[2])
+                        actual_channel_mask = int(parts[3], 16)
+                    except (IndexError, ValueError):
+                        result_line = None
+                return
+
+            if (line.startswith("M:Capture data...")):
+                return
+
+            if (line.startswith("M:ERR,") or line.startswith("M:OK,")):
+                return
+
+            if (not data_started):
+                if (line == "M:DATA"):
+                    data_started = True
+                return
+
+            if (line == "M:END"):
+                data_done = True
+                return
+
+            if (line.startswith("M:")):
+                return
+
+            colon_pos = line.find(":")
+            if (colon_pos < 0):
+                return
+            for token in line[colon_pos + 1:].split():
+                if (len(token) == 4):
+                    time_samples.append(int(token, 16))
+
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < capture_wait):
+            time.sleep(0.001)
+            for line in self.check_input():
+                process_line(line)
+            if (result_line is not None and result_line.startswith("M:ERR,")):
+                break
+            if (result_line is not None and result_line.startswith("M:OK,") and data_done):
+                break
+
+        if (result_line is None):
+            return {"ok": False, "error": "No result line"}
+
+        if (result_line.startswith("M:ERR,")):
+            return {"ok": False, "error": result_line[6:]}
+
+        if (not data_done):
+            return {"ok": False, "error": "Data not done"}
+
+        if (actual_channel_mask is None):
+            actual_channel_mask = channel_mask
+
+        channels = self.channels_from_mask(actual_channel_mask)
+        if (num_channels == 0):
+            num_channels = len(channels)
+
+        samples_by_channel = [[] for _ in channels]
+        for time_index in range(0, len(time_samples), num_channels):
+            row = time_samples[time_index:time_index + num_channels]
+            if (len(row) < num_channels):
+                break
+            for ch_index, value in enumerate(row):
+                samples_by_channel[ch_index].append(value)
+
+        return {
+            "ok": True,
+            "sample_count": actual_sample_count,
+            "rate_hz": actual_rate_hz,
+            "channel_mask": actual_channel_mask,
+            "channels": channels,
+            "samples": samples_by_channel,
+        }
