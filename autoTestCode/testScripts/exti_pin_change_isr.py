@@ -9,8 +9,6 @@ SAMPLE_COUNT = 128000
 LA_CHANNEL = 7
 PULSE_COUNT = 20
 MIN_BLIPS = 4
-RISE_PERIOD_S = 0.0004
-LOW_BEFORE_RISE_S = 0.00015
 
 
 def count_blips(channel_data, max_width=100):
@@ -37,15 +35,6 @@ def count_blips(channel_data, max_width=100):
     return blip_count
 
 
-def build_pulse_schedule(pulse_count):
-    events = []
-    for index in range(pulse_count):
-        t_rise = 0.001 + index * RISE_PERIOD_S
-        events.append((t_rise - LOW_BEFORE_RISE_S, False))
-        events.append((t_rise, True))
-    return events
-
-
 def exti_pin_change_isr_test():
     test_ch32v003_test_target.connectPin("PD3", "305_PA0")
     test_ch32v003_test_target.connectPin("PC1", "305_PA7")
@@ -54,22 +43,6 @@ def exti_pin_change_isr_test():
     test_ch32v003_test_target.digital_write(0, False)
     time.sleep(0.01)
 
-    pulse_events = build_pulse_schedule(PULSE_COUNT)
-    stimulus = {"start": None, "index": 0, "rising_edges": 0}
-
-    def pulse_pd3():
-        if (stimulus["start"] is None):
-            return
-        elapsed = time.monotonic() - stimulus["start"]
-        while (stimulus["index"] < len(pulse_events)):
-            when, value = pulse_events[stimulus["index"]]
-            if (elapsed < when):
-                break
-            test_ch32v003_test_target.digital_write(0, value)
-            if (value):
-                stimulus["rising_edges"] += 1
-            stimulus["index"] += 1
-
     start = test_ch32v003_test_target.logic_analyzer_capture_start(
         RATE_HZ, SAMPLE_COUNT, wait_for_input_time=5
     )
@@ -77,21 +50,16 @@ def exti_pin_change_isr_test():
         print(start["error"])
         return False
 
-    stimulus["start"] = time.monotonic()
+    pulse_commands = test_ch32v003_test_target.build_digital_pulse_train(0, PULSE_COUNT)
+    test_ch32v003_test_target.send_command_batch(pulse_commands)
+
     capture = test_ch32v003_test_target.logic_analyzer_capture_wait(
         sample_count=SAMPLE_COUNT,
         rate_hz=start["rate_hz"],
-        during_capture=pulse_pd3,
         timeout=30,
     )
     if (capture["ok"] == False):
         print(capture["error"])
-        return False
-
-    if (stimulus["rising_edges"] < PULSE_COUNT):
-        print(
-            f"Sent {stimulus['rising_edges']}/{PULSE_COUNT} rising-edge stimuli during capture"
-        )
         return False
 
     channel_data = capture["samples"][LA_CHANNEL]

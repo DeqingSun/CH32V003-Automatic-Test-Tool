@@ -153,6 +153,21 @@ class Ch32V003_test_target:
     def digital_write(self, pin, value, wait_for_input_time=0):
         return self.test_tool.digital_write(pin, value, wait_for_input_time)
 
+    def send_command_batch(self, commands, flush=True):
+        return self.test_tool.send_command_batch(commands, flush)
+
+    def write_batch_wait_for_response(self, commands, string_to_wait, wait_for_input_time):
+        return self.test_tool.write_batch_wait_for_response(
+            commands, string_to_wait, wait_for_input_time)
+
+    @staticmethod
+    def digital_write_command(pin, value):
+        return Ch32V305CCT6_test_tool.digital_write_command(pin, value)
+
+    @staticmethod
+    def build_digital_pulse_train(pin, pulse_count):
+        return Ch32V305CCT6_test_tool.build_digital_pulse_train(pin, pulse_count)
+
     def set_3V3_power(self, on_off, wch_linke_serial_number = None):
         # minichlink -k3 -C linke
         # minichlink -kt -C linke

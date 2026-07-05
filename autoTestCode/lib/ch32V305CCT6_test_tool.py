@@ -133,6 +133,51 @@ class Ch32V305CCT6_test_tool:
                             return line
             return ""
     
+    def send_command_batch(self, commands, flush=True):
+        if (self.serial_port == None):
+            return False
+        if (len(commands) == 0):
+            return True
+        payload = "\n".join(commands) + "\n"
+        self.serial_port.write(payload.encode('ascii'))
+        if (flush):
+            self.serial_port.flush()
+        return True
+
+    def write_batch_wait_for_response(self, commands, string_to_wait, wait_for_input_time):
+        if (self.serial_port == None):
+            return ""
+        if (len(commands) == 0):
+            return ""
+        payload = "\n".join(commands) + "\n"
+        self.serial_port.write(payload.encode('ascii'))
+        self.serial_port.flush()
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < wait_for_input_time):
+            time.sleep(0.001)
+            response = self.check_input()
+            if (len(response) > 0):
+                for line in response:
+                    if string_to_wait in line:
+                        return line
+        return ""
+
+    @staticmethod
+    def digital_write_command(pin, value):
+        if (value == True):
+            value = 1
+        if (value == False):
+            value = 0
+        return f"W{pin:01d}{value}"
+
+    @staticmethod
+    def build_digital_pulse_train(pin, pulse_count):
+        commands = []
+        for _ in range(pulse_count):
+            commands.append(Ch32V305CCT6_test_tool.digital_write_command(pin, False))
+            commands.append(Ch32V305CCT6_test_tool.digital_write_command(pin, True))
+        return commands
+
     def initailize(self, wait_for_input_time=0):
         command = "I\n"
         write_response = self.write_string_wait_for_response(command, "I:", wait_for_input_time)

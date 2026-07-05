@@ -204,17 +204,22 @@ void loop() {
             if (rxSerialBufferPtr == 3) {
               uint8_t pin = hexToUchar(rxSerialBuffer[1]);
               uint8_t value = hexToUchar(rxSerialBuffer[2]);
-              SerialUSB.print(rxSerialBuffer[0]);
-              SerialUSB.print(rxSerialBuffer[1]);
-              SerialUSB.print((char)':');
+              bool quiet = logicAnalyzerIsBusy() || analogCaptureIsBusy();
+              if (!quiet) {
+                SerialUSB.print(rxSerialBuffer[0]);
+                SerialUSB.print(rxSerialBuffer[1]);
+                SerialUSB.print((char)':');
+              }
               if (pin < 8) {
                 // we only map PA0-PA7 to pins 0-7
                 pin = PA0 + pin;
                 pinMode(pin, OUTPUT);
                 digitalWrite(pin, value);
-                uint8_t pinStatus = digitalRead(pin);
-                SerialUSB.println((char)('0' + pinStatus));
-              } else {
+                if (!quiet) {
+                  uint8_t pinStatus = digitalRead(pin);
+                  SerialUSB.println((char)('0' + pinStatus));
+                }
+              } else if (!quiet) {
                 SerialUSB.println("not valid");
               }
             }
