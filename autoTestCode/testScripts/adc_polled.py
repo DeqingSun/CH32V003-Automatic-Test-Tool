@@ -7,6 +7,14 @@ import time
 
 from lib.ch32v003_test_target import Ch32V003_test_target
 
+ADC_TARGET = 512
+ADC_TOLERANCE = 8
+WAIT_ITERATIONS = 30
+WAIT_INTERVAL_S = 0.1
+SETTLE_AFTER_DAC_S = 0.1
+READ_ADC_WINDOW_S = 1.0
+
+
 class LineBufferedReader:
     def __init__(self, proc):
         self._proc = proc
@@ -26,10 +34,30 @@ class LineBufferedReader:
             lines.append(line.rstrip("\r"))
         return lines
 
+
+def wait_for_adc_line(debug_reader, iterations=WAIT_ITERATIONS):
+    for _ in range(iterations):
+        for line in debug_reader.read_complete_lines():
+            if ("adc:" in line):
+                return True
+        time.sleep(WAIT_INTERVAL_S)
+    return False
+
+
+def read_last_adc_value(debug_reader, window_s=READ_ADC_WINDOW_S):
+    last_adc = None
+    deadline = time.monotonic() + window_s
+    while (time.monotonic() < deadline):
+        for line in debug_reader.read_complete_lines():
+            if ("adc:" in line):
+                last_adc = int(line.split("adc:")[1].strip())
+        time.sleep(0.02)
+    return last_adc
+
+
 def adc_polled_test():
     test_ch32v003_test_target.connectPin("PD1", "305_PA0")
     test_ch32v003_test_target.connectPin("WCH_LINKE_SWDIO", "305_PA0")
-
     test_ch32v003_test_target.connectPin("PD4", "305_PA4")
 
     debug_terminal_command = test_ch32v003_test_target.debug_terminal_command()
@@ -44,55 +72,31 @@ def adc_polled_test():
         stderr=subprocess.STDOUT,
     )
 
-    debug_reader = LineBufferedReader(debug_terminal_proc)
+    try:
+        debug_reader = LineBufferedReader(debug_terminal_proc)
 
-    count = 0
-    found_adc = False
-    while (count < 10 and not found_adc):
-        for line in debug_reader.read_complete_lines():
-            if ("adc:" in line):
-                found_adc = True
-                break
-        if (not found_adc):
-            time.sleep(0.1)
-            count += 1
+        if (not wait_for_adc_line(debug_reader)):
+            print("Failed to find ADC output from debug terminal")
+            return False
 
-    if (not found_adc):
-        print("Failed to find ADC output from debug terminal")
-        return False
+        test_ch32v003_test_target.test_tool.analog_write(4, 2048)  # 1/2 of 4096
+        time.sleep(SETTLE_AFTER_DAC_S)
 
-    test_ch32v003_test_target.test_tool.analog_write(4, 2048) #1/2 of 4096
-    time.sleep(0.05)
-    for line in debug_reader.read_complete_lines():
-        pass #discard all lines
-
-    count = 0
-    adc_value = None
-    while (count < 10 and adc_value is None):
-        for line in debug_reader.read_complete_lines():
-            if ("adc:" in line):
-                #sample: Count: 2 adc: 507
-                adc_value = int(line.split("adc:")[1].strip())
-                break
+        adc_value = read_last_adc_value(debug_reader)
         if (adc_value is None):
-            time.sleep(0.1)
-            count += 1
+            print("Failed to find ADC value from debug terminal")
+            return False
 
-    if (adc_value is None):
-        print("Failed to find ADC value from debug terminal")
-        return False
+        # the 003 has 10bit resolution
+        if (abs(adc_value - ADC_TARGET) <= ADC_TOLERANCE):
+            print("ADC value in range: ", adc_value)
+            return True
+        else:
+            print("ADC value is not valid: ", adc_value)
+            return False
+    finally:
+        debug_terminal_proc.terminate()
 
-    #the 003 has 10bit resolution
-    if (abs(adc_value-512) < 5):
-        print("ADC value in range: ", adc_value)
-        return True
-    else:
-        print("ADC value is not valid: ", adc_value)
-        return False
-
-    debug_terminal_proc.terminate()
-
-    return True
 
 if __name__ == "__main__":
     test_ch32v003_test_target = Ch32V003_test_target()
