@@ -13,9 +13,16 @@ enum LogicAnalyzerResult {
   LA_ERR_BAD_COUNT,
 };
 
+enum LogicAnalyzerPollState {
+  LA_POLL_IDLE = 0,
+  LA_POLL_RUNNING,
+  LA_POLL_DONE,
+};
+
 bool logicAnalyzerIsBusy();
-LogicAnalyzerResult logicAnalyzerCapture(uint32_t rateHz, uint32_t sampleCount,
-                                         uint32_t *actualRateHz);
+LogicAnalyzerResult logicAnalyzerStart(uint32_t rateHz, uint32_t sampleCount,
+                                       uint32_t *actualRateHz);
+LogicAnalyzerPollState logicAnalyzerPoll(Stream &out);
 const uint8_t *logicAnalyzerBuffer();
 void logicAnalyzerUpload(Stream &out, uint32_t sampleCount, uint32_t rateHz);
 

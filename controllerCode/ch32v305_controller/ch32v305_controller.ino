@@ -145,16 +145,13 @@ void loop() {
               uint32_t rateHz = hexToUint32(&rxSerialBuffer[1]);
               uint32_t sampleCount = hexToUint32(&rxSerialBuffer[9]);
               uint32_t actualRateHz = 0;
-              SerialUSB.println("L:Capture data...");
-              SerialUSB.flush();
               LogicAnalyzerResult laResult =
-                  logicAnalyzerCapture(rateHz, sampleCount, &actualRateHz);
+                  logicAnalyzerStart(rateHz, sampleCount, &actualRateHz);
               if (laResult == LA_OK) {
-                SerialUSB.print("L:OK,");
+                SerialUSB.print("L:STARTED,");
                 SerialUSB.print(sampleCount);
                 SerialUSB.print(",");
                 SerialUSB.println(actualRateHz);
-                logicAnalyzerUpload(SerialUSB, sampleCount, actualRateHz);
               } else if (laResult == LA_ERR_BAD_RATE) {
                 SerialUSB.println("L:ERR,bad_rate");
               } else if (laResult == LA_ERR_BAD_COUNT) {
@@ -164,24 +161,21 @@ void loop() {
               }
             }
             break;
+          case 'l':
+            if (rxSerialBufferPtr == 1) {
+              logicAnalyzerPoll(SerialUSB);
+            }
+            break;
           case 'M':
             if (rxSerialBufferPtr == 19) {
               uint32_t rateHz = hexToUint32(&rxSerialBuffer[1]);
               uint32_t sampleCount = hexToUint32(&rxSerialBuffer[9]);
               uint8_t channelMask = hexToUchar2(&rxSerialBuffer[17]);
               uint32_t actualRateHz = 0;
-              uint8_t numChannels = 0;
-              for (uint8_t i = 0; i < 8; i++) {
-                if (channelMask & (1U << i)) {
-                  numChannels++;
-                }
-              }
-              SerialUSB.println("M:Capture data...");
-              SerialUSB.flush();
               AnalogCaptureResult acResult =
-                  analogCapture(rateHz, sampleCount, channelMask, &actualRateHz);
+                  analogCaptureStart(rateHz, sampleCount, channelMask, &actualRateHz);
               if (acResult == AC_OK) {
-                SerialUSB.print("M:OK,");
+                SerialUSB.print("M:STARTED,");
                 SerialUSB.print(sampleCount);
                 SerialUSB.print(",");
                 SerialUSB.print(actualRateHz);
@@ -190,8 +184,6 @@ void loop() {
                   SerialUSB.print('0');
                 }
                 SerialUSB.println(channelMask, HEX);
-                analogCaptureUpload(SerialUSB, sampleCount, channelMask,
-                                    numChannels);
               } else if (acResult == AC_ERR_BAD_RATE) {
                 SerialUSB.println("M:ERR,bad_rate");
               } else if (acResult == AC_ERR_BAD_COUNT) {
@@ -201,6 +193,11 @@ void loop() {
               } else if (acResult == AC_ERR_BUSY) {
                 SerialUSB.println("M:ERR,busy");
               }
+            }
+            break;
+          case 'm':
+            if (rxSerialBufferPtr == 1) {
+              analogCapturePoll(SerialUSB);
             }
             break;
           case 'W':

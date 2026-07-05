@@ -217,15 +217,39 @@ class Ch32V305CCT6_test_tool:
             else:
                 return None
     
-    def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
+    def logic_analyzer_capture_start(self, rate_hz, sample_count, wait_for_input_time=1):
         command = f"L{rate_hz:08X}{sample_count:08X}\n"
-        self.serial_port.write(command.encode('ascii'))
-        self.serial_port.flush()
+        response = self.write_string_wait_for_response(command, "L:", wait_for_input_time)
+        if (len(response) == 0):
+            return {"ok": False, "error": "No response"}
+        if (response.startswith("L:ERR,")):
+            return {"ok": False, "error": response[6:]}
+        if (response.startswith("L:STARTED,")):
+            try:
+                parts = response.split(",")
+                return {
+                    "ok": True,
+                    "sample_count": int(parts[1]),
+                    "rate_hz": int(parts[2]),
+                }
+            except (IndexError, ValueError):
+                return {"ok": False, "error": "Bad STARTED line"}
+        return {"ok": False, "error": "Unexpected response: " + response}
 
-        if (rate_hz > 0):
-            capture_wait = max(wait_for_input_time, (sample_count / rate_hz) + 2.0)
-        else:
-            capture_wait = wait_for_input_time
+    def _logic_analyzer_process_data_line(self, line, samples):
+        colon_pos = line.find(":")
+        if (colon_pos < 0):
+            return
+        for token in line[colon_pos + 1:].split():
+            if (len(token) == 2):
+                samples.append(int(token, 16))
+
+    def logic_analyzer_capture_poll(self, wait_for_input_time=0.1, during_capture=None):
+        if (self.serial_port == None):
+            return {"state": "error", "error": "Not connected"}
+
+        self.serial_port.write(b"l\n")
+        self.serial_port.flush()
 
         result_line = None
         actual_sample_count = None
@@ -234,76 +258,92 @@ class Ch32V305CCT6_test_tool:
         data_started = False
         data_done = False
 
-        def process_line(line):
-            nonlocal result_line, actual_sample_count, actual_rate_hz
-            nonlocal samples, data_started, data_done
-
-            if (result_line is None):
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < wait_for_input_time):
+            if (during_capture is not None):
+                during_capture()
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line == "L:IDLE"):
+                    return {"state": "idle"}
+                if (line == "L:RUNNING"):
+                    return {"state": "running"}
                 if (line.startswith("L:ERR,")):
-                    result_line = line
-                elif (line.startswith("L:OK,")):
+                    return {"state": "error", "error": line[6:]}
+                if (line.startswith("L:OK,")):
                     result_line = line
                     try:
                         parts = line.split(",")
                         actual_sample_count = int(parts[1])
                         actual_rate_hz = int(parts[2])
                     except (IndexError, ValueError):
-                        result_line = None
-                return
-
-            if (line.startswith("L:Capture data...")):
-                return
-
-            if (line.startswith("L:ERR,") or line.startswith("L:OK,")):
-                return
-
-            if (not data_started):
+                        return {"state": "error", "error": "Bad OK line"}
+                    continue
                 if (line == "L:DATA"):
                     data_started = True
-                return
+                    continue
+                if (line == "L:END"):
+                    data_done = True
+                    continue
+                if (data_started and not data_done):
+                    self._logic_analyzer_process_data_line(line, samples)
 
-            if (line == "L:END"):
-                data_done = True
-                return
+            if (result_line is not None and data_done):
+                samples_channels = [[(s >> i) & 1 for s in samples] for i in range(8)]
+                return {
+                    "state": "done",
+                    "sample_count": actual_sample_count,
+                    "rate_hz": actual_rate_hz,
+                    "samples": samples_channels,
+                }
 
-            if (line.startswith("L:")):
-                return
+        if (result_line is not None):
+            return {"state": "running"}
+        return {"state": "timeout"}
 
-            colon_pos = line.find(":")
-            if (colon_pos < 0):
-                return
-            for token in line[colon_pos + 1:].split():
-                if (len(token) == 2):
-                    samples.append(int(token, 16))
+    def logic_analyzer_capture_wait(self, sample_count=None, rate_hz=None,
+                                    during_capture=None, poll_interval=0.001,
+                                    timeout=30):
+        if (sample_count is not None and rate_hz is not None and rate_hz > 0):
+            capture_timeout = max(timeout, (sample_count / rate_hz) + 2.0)
+        else:
+            capture_timeout = timeout
 
         start_time = time.monotonic()
-        while (time.monotonic() - start_time < capture_wait):
-            time.sleep(0.001)
-            for line in self.check_input():
-                process_line(line)
-            if (result_line is not None and result_line.startswith("L:ERR,")):
-                break
-            if (result_line is not None and result_line.startswith("L:OK,") and data_done):
-                break
+        while (time.monotonic() - start_time < capture_timeout):
+            if (during_capture is not None):
+                during_capture()
+            poll_wait = 0.05
+            if (sample_count is not None and rate_hz is not None and rate_hz > 0):
+                poll_wait = max(poll_wait, (sample_count / rate_hz) + 2.0)
+            poll = self.logic_analyzer_capture_poll(
+                wait_for_input_time=poll_wait, during_capture=during_capture)
+            if (poll["state"] == "done"):
+                return {
+                    "ok": True,
+                    "sample_count": poll["sample_count"],
+                    "rate_hz": poll["rate_hz"],
+                    "samples": poll["samples"],
+                }
+            if (poll["state"] == "error"):
+                return {"ok": False, "error": poll["error"]}
+            if (poll["state"] == "idle"):
+                return {"ok": False, "error": "Capture not running"}
+            time.sleep(poll_interval)
 
-        if (result_line is None):
-            return {"ok": False, "error": "No result line"}
+        return {"ok": False, "error": "Timeout"}
 
-        if (result_line.startswith("L:ERR,")):
-            return {"ok": False, "error": result_line[6:]}
-
-        if (not data_done):
-            return {"ok": False, "error": "Data not done"}
-
-        #split the samples into 8 channels, each sample is 8bit, represent 8 digital channels
-        samples_channels = [[(s >> i) & 1 for s in samples] for i in range(8)]
-
-        return {
-            "ok": True,
-            "sample_count": actual_sample_count,
-            "rate_hz": actual_rate_hz,
-            "samples": samples_channels,
-        }
+    def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1,
+                               during_capture=None):
+        start = self.logic_analyzer_capture_start(rate_hz, sample_count, wait_for_input_time)
+        if (not start["ok"]):
+            return start
+        return self.logic_analyzer_capture_wait(
+            sample_count=sample_count,
+            rate_hz=rate_hz,
+            during_capture=during_capture,
+            timeout=wait_for_input_time,
+        )
 
     @staticmethod
     def channel_mask_from_pins(pins):
@@ -318,16 +358,40 @@ class Ch32V305CCT6_test_tool:
     def channels_from_mask(channel_mask):
         return [i for i in range(8) if (channel_mask & (1 << i))]
 
-    def analog_capture(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
+    def analog_capture_start(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
         command = f"M{rate_hz:08X}{sample_count:08X}{channel_mask:02X}\n"
-        self.serial_port.write(command.encode('ascii'))
-        self.serial_port.flush()
+        response = self.write_string_wait_for_response(command, "M:", wait_for_input_time)
+        if (len(response) == 0):
+            return {"ok": False, "error": "No response"}
+        if (response.startswith("M:ERR,")):
+            return {"ok": False, "error": response[6:]}
+        if (response.startswith("M:STARTED,")):
+            try:
+                parts = response.split(",")
+                return {
+                    "ok": True,
+                    "sample_count": int(parts[1]),
+                    "rate_hz": int(parts[2]),
+                    "channel_mask": int(parts[3], 16),
+                }
+            except (IndexError, ValueError):
+                return {"ok": False, "error": "Bad STARTED line"}
+        return {"ok": False, "error": "Unexpected response: " + response}
 
-        num_channels = bin(channel_mask).count("1")
-        if (rate_hz > 0):
-            capture_wait = max(wait_for_input_time, (sample_count / rate_hz) + 2.0)
-        else:
-            capture_wait = wait_for_input_time
+    def _analog_capture_process_data_line(self, line, time_samples):
+        colon_pos = line.find(":")
+        if (colon_pos < 0):
+            return
+        for token in line[colon_pos + 1:].split():
+            if (len(token) == 4):
+                time_samples.append(int(token, 16))
+
+    def analog_capture_poll(self, wait_for_input_time=0.1, during_capture=None):
+        if (self.serial_port == None):
+            return {"state": "error", "error": "Not connected"}
+
+        self.serial_port.write(b"m\n")
+        self.serial_port.flush()
 
         result_line = None
         actual_sample_count = None
@@ -337,14 +401,19 @@ class Ch32V305CCT6_test_tool:
         data_started = False
         data_done = False
 
-        def process_line(line):
-            nonlocal result_line, actual_sample_count, actual_rate_hz
-            nonlocal actual_channel_mask, time_samples, data_started, data_done
-
-            if (result_line is None):
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < wait_for_input_time):
+            if (during_capture is not None):
+                during_capture()
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line == "M:IDLE"):
+                    return {"state": "idle"}
+                if (line == "M:RUNNING"):
+                    return {"state": "running"}
                 if (line.startswith("M:ERR,")):
-                    result_line = line
-                elif (line.startswith("M:OK,")):
+                    return {"state": "error", "error": line[6:]}
+                if (line.startswith("M:OK,")):
                     result_line = line
                     try:
                         parts = line.split(",")
@@ -352,73 +421,83 @@ class Ch32V305CCT6_test_tool:
                         actual_rate_hz = int(parts[2])
                         actual_channel_mask = int(parts[3], 16)
                     except (IndexError, ValueError):
-                        result_line = None
-                return
-
-            if (line.startswith("M:Capture data...")):
-                return
-
-            if (line.startswith("M:ERR,") or line.startswith("M:OK,")):
-                return
-
-            if (not data_started):
+                        return {"state": "error", "error": "Bad OK line"}
+                    continue
                 if (line == "M:DATA"):
                     data_started = True
-                return
+                    continue
+                if (line == "M:END"):
+                    data_done = True
+                    continue
+                if (data_started and not data_done):
+                    self._analog_capture_process_data_line(line, time_samples)
 
-            if (line == "M:END"):
-                data_done = True
-                return
+            if (result_line is not None and data_done):
+                channels = self.channels_from_mask(actual_channel_mask)
+                num_channels = len(channels)
+                samples_by_channel = [[] for _ in channels]
+                for time_index in range(0, len(time_samples), num_channels):
+                    row = time_samples[time_index:time_index + num_channels]
+                    if (len(row) < num_channels):
+                        break
+                    for ch_index, value in enumerate(row):
+                        samples_by_channel[ch_index].append(value)
+                return {
+                    "state": "done",
+                    "sample_count": actual_sample_count,
+                    "rate_hz": actual_rate_hz,
+                    "channel_mask": actual_channel_mask,
+                    "channels": channels,
+                    "samples": samples_by_channel,
+                }
 
-            if (line.startswith("M:")):
-                return
+        if (result_line is not None):
+            return {"state": "running"}
+        return {"state": "timeout"}
 
-            colon_pos = line.find(":")
-            if (colon_pos < 0):
-                return
-            for token in line[colon_pos + 1:].split():
-                if (len(token) == 4):
-                    time_samples.append(int(token, 16))
+    def analog_capture_wait(self, sample_count=None, rate_hz=None, channel_mask=None,
+                            during_capture=None, poll_interval=0.001, timeout=30):
+        num_channels = bin(channel_mask).count("1") if channel_mask is not None else 1
+        if (sample_count is not None and rate_hz is not None and rate_hz > 0):
+            capture_timeout = max(timeout, (sample_count / rate_hz) + 2.0)
+        else:
+            capture_timeout = timeout
 
         start_time = time.monotonic()
-        while (time.monotonic() - start_time < capture_wait):
-            time.sleep(0.001)
-            for line in self.check_input():
-                process_line(line)
-            if (result_line is not None and result_line.startswith("M:ERR,")):
-                break
-            if (result_line is not None and result_line.startswith("M:OK,") and data_done):
-                break
+        while (time.monotonic() - start_time < capture_timeout):
+            if (during_capture is not None):
+                during_capture()
+            poll_wait = 0.05
+            if (sample_count is not None and rate_hz is not None and rate_hz > 0):
+                poll_wait = max(poll_wait, (sample_count / rate_hz) + 2.0)
+            poll = self.analog_capture_poll(
+                wait_for_input_time=poll_wait, during_capture=during_capture)
+            if (poll["state"] == "done"):
+                return {
+                    "ok": True,
+                    "sample_count": poll["sample_count"],
+                    "rate_hz": poll["rate_hz"],
+                    "channel_mask": poll["channel_mask"],
+                    "channels": poll["channels"],
+                    "samples": poll["samples"],
+                }
+            if (poll["state"] == "error"):
+                return {"ok": False, "error": poll["error"]}
+            if (poll["state"] == "idle"):
+                return {"ok": False, "error": "Capture not running"}
+            time.sleep(poll_interval)
 
-        if (result_line is None):
-            return {"ok": False, "error": "No result line"}
+        return {"ok": False, "error": "Timeout"}
 
-        if (result_line.startswith("M:ERR,")):
-            return {"ok": False, "error": result_line[6:]}
-
-        if (not data_done):
-            return {"ok": False, "error": "Data not done"}
-
-        if (actual_channel_mask is None):
-            actual_channel_mask = channel_mask
-
-        channels = self.channels_from_mask(actual_channel_mask)
-        if (num_channels == 0):
-            num_channels = len(channels)
-
-        samples_by_channel = [[] for _ in channels]
-        for time_index in range(0, len(time_samples), num_channels):
-            row = time_samples[time_index:time_index + num_channels]
-            if (len(row) < num_channels):
-                break
-            for ch_index, value in enumerate(row):
-                samples_by_channel[ch_index].append(value)
-
-        return {
-            "ok": True,
-            "sample_count": actual_sample_count,
-            "rate_hz": actual_rate_hz,
-            "channel_mask": actual_channel_mask,
-            "channels": channels,
-            "samples": samples_by_channel,
-        }
+    def analog_capture(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1,
+                       during_capture=None):
+        start = self.analog_capture_start(rate_hz, sample_count, channel_mask, wait_for_input_time)
+        if (not start["ok"]):
+            return start
+        return self.analog_capture_wait(
+            sample_count=sample_count,
+            rate_hz=rate_hz,
+            channel_mask=channel_mask,
+            during_capture=during_capture,
+            timeout=wait_for_input_time,
+        )

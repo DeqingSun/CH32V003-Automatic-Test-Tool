@@ -118,11 +118,40 @@ class Ch32V003_test_target:
         self.resetMatrix()
         return True
 
-    def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1):
-        return self.test_tool.logic_analyzer_capture(rate_hz, sample_count, wait_for_input_time)
+    def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1, during_capture=None):
+        return self.test_tool.logic_analyzer_capture(
+            rate_hz, sample_count, wait_for_input_time, during_capture)
 
-    def analog_capture(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
-        return self.test_tool.analog_capture(rate_hz, sample_count, channel_mask, wait_for_input_time)
+    def logic_analyzer_capture_start(self, rate_hz, sample_count, wait_for_input_time=1):
+        return self.test_tool.logic_analyzer_capture_start(rate_hz, sample_count, wait_for_input_time)
+
+    def logic_analyzer_capture_poll(self, wait_for_input_time=0.1):
+        return self.test_tool.logic_analyzer_capture_poll(wait_for_input_time)
+
+    def logic_analyzer_capture_wait(self, sample_count=None, rate_hz=None,
+                                      during_capture=None, poll_interval=0.001, timeout=30):
+        return self.test_tool.logic_analyzer_capture_wait(
+            sample_count, rate_hz, during_capture, poll_interval, timeout)
+
+    def analog_capture(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1,
+                       during_capture=None):
+        return self.test_tool.analog_capture(
+            rate_hz, sample_count, channel_mask, wait_for_input_time, during_capture)
+
+    def analog_capture_start(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
+        return self.test_tool.analog_capture_start(
+            rate_hz, sample_count, channel_mask, wait_for_input_time)
+
+    def analog_capture_poll(self, wait_for_input_time=0.1):
+        return self.test_tool.analog_capture_poll(wait_for_input_time)
+
+    def analog_capture_wait(self, sample_count=None, rate_hz=None, channel_mask=None,
+                            during_capture=None, poll_interval=0.001, timeout=30):
+        return self.test_tool.analog_capture_wait(
+            sample_count, rate_hz, channel_mask, during_capture, poll_interval, timeout)
+
+    def digital_write(self, pin, value, wait_for_input_time=0):
+        return self.test_tool.digital_write(pin, value, wait_for_input_time)
 
     def set_3V3_power(self, on_off, wch_linke_serial_number = None):
         # minichlink -k3 -C linke

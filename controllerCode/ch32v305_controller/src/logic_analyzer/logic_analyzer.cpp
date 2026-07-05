@@ -18,6 +18,7 @@ static uint32_t la_remaining = 0;
 static uint32_t la_buf_offset = 0;
 static uint16_t la_current_chunk = 0;
 static uint32_t la_actual_rate_hz = 0;
+static uint32_t la_sample_count = 0;
 static bool la_hw_initialized = false;
 
 static const uint32_t LA_TIMER_CLK_HZ = 144000000UL;
@@ -154,8 +155,8 @@ bool logicAnalyzerIsBusy() {
   return la_capture_busy;
 }
 
-LogicAnalyzerResult logicAnalyzerCapture(uint32_t rateHz, uint32_t sampleCount,
-                                         uint32_t *actualRateHz) {
+LogicAnalyzerResult logicAnalyzerStart(uint32_t rateHz, uint32_t sampleCount,
+                                       uint32_t *actualRateHz) {
   if (la_capture_busy || analogCaptureIsBusy()) {
     return LA_ERR_BUSY;
   }
@@ -174,6 +175,7 @@ LogicAnalyzerResult logicAnalyzerCapture(uint32_t rateHz, uint32_t sampleCount,
   la_capture_done = false;
   la_remaining = sampleCount;
   la_buf_offset = 0;
+  la_sample_count = sampleCount;
   la_actual_rate_hz = actualRate;
 
   laConfigureInputs();
@@ -194,15 +196,32 @@ LogicAnalyzerResult logicAnalyzerCapture(uint32_t rateHz, uint32_t sampleCount,
   laStartDmaChunk(firstChunk);
   TIM_Cmd(TIM7, ENABLE);
 
-  while (!la_capture_done) {
-    /* Block until DMA chain completes. */
-  }
-
-  la_capture_busy = false;
   if (actualRateHz != nullptr) {
     *actualRateHz = la_actual_rate_hz;
   }
   return LA_OK;
+}
+
+LogicAnalyzerPollState logicAnalyzerPoll(Stream &out) {
+  if (!la_capture_busy) {
+    out.println("L:IDLE");
+    return LA_POLL_IDLE;
+  }
+
+  if (!la_capture_done) {
+    out.println("L:RUNNING");
+    return LA_POLL_RUNNING;
+  }
+
+  out.print("L:OK,");
+  out.print(la_sample_count);
+  out.print(",");
+  out.println(la_actual_rate_hz);
+  logicAnalyzerUpload(out, la_sample_count, la_actual_rate_hz);
+
+  la_capture_busy = false;
+  la_capture_done = false;
+  return LA_POLL_DONE;
 }
 
 const uint8_t *logicAnalyzerBuffer() {

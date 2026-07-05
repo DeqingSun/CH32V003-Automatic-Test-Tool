@@ -18,6 +18,9 @@ static uint32_t ac_remaining = 0;
 static uint32_t ac_buf_offset = 0;
 static uint16_t ac_current_chunk = 0;
 static uint32_t ac_actual_rate_hz = 0;
+static uint32_t ac_time_samples = 0;
+static uint8_t ac_channel_mask = 0;
+static uint8_t ac_num_channels = 0;
 static bool ac_hw_initialized = false;
 
 static const uint32_t AC_TIMER_CLK_HZ = 144000000UL;
@@ -243,8 +246,8 @@ bool analogCaptureIsBusy() {
   return ac_capture_busy;
 }
 
-AnalogCaptureResult analogCapture(uint32_t rateHz, uint32_t timeSamples,
-                                  uint8_t channelMask, uint32_t *actualRateHz) {
+AnalogCaptureResult analogCaptureStart(uint32_t rateHz, uint32_t timeSamples,
+                                       uint8_t channelMask, uint32_t *actualRateHz) {
   if (ac_capture_busy || logicAnalyzerIsBusy()) {
     return AC_ERR_BUSY;
   }
@@ -268,6 +271,9 @@ AnalogCaptureResult analogCapture(uint32_t rateHz, uint32_t timeSamples,
   ac_capture_done = false;
   ac_remaining = totalHalfwords;
   ac_buf_offset = 0;
+  ac_time_samples = timeSamples;
+  ac_channel_mask = channelMask;
+  ac_num_channels = numChannels;
   ac_actual_rate_hz = actualRate;
 
   acConfigureAnalogInputs(channelMask);
@@ -289,15 +295,37 @@ AnalogCaptureResult analogCapture(uint32_t rateHz, uint32_t timeSamples,
   acStartDmaChunk(firstChunk);
   TIM_Cmd(TIM3, ENABLE);
 
-  while (!ac_capture_done) {
-    /* Block until DMA chain completes. */
-  }
-
-  ac_capture_busy = false;
   if (actualRateHz != nullptr) {
     *actualRateHz = ac_actual_rate_hz;
   }
   return AC_OK;
+}
+
+AnalogCapturePollState analogCapturePoll(Stream &out) {
+  if (!ac_capture_busy) {
+    out.println("M:IDLE");
+    return AC_POLL_IDLE;
+  }
+
+  if (!ac_capture_done) {
+    out.println("M:RUNNING");
+    return AC_POLL_RUNNING;
+  }
+
+  out.print("M:OK,");
+  out.print(ac_time_samples);
+  out.print(",");
+  out.print(ac_actual_rate_hz);
+  out.print(",");
+  if (ac_channel_mask < 0x10U) {
+    out.print('0');
+  }
+  out.println(ac_channel_mask, HEX);
+  analogCaptureUpload(out, ac_time_samples, ac_channel_mask, ac_num_channels);
+
+  ac_capture_busy = false;
+  ac_capture_done = false;
+  return AC_POLL_DONE;
 }
 
 static void acPrintHexNibble(Stream &out, uint8_t nibble) {
