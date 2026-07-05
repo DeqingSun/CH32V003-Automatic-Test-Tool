@@ -158,8 +158,8 @@ class Ch32V305CCT6_test_tool:
             return (len(write_response)>0)
         
     def analog_read(self, pin, wait_for_input_time=1):
-        command = f"A{pin:02d}\n"
-        responseHeader = f"A{pin:02d}:"
+        command = f"A{pin:01d}\n"
+        responseHeader = f"A{pin:01d}:"
         write_response = self.write_string_wait_for_response(command, responseHeader, wait_for_input_time)
         if (wait_for_input_time == 0):
             return None
@@ -190,8 +190,8 @@ class Ch32V305CCT6_test_tool:
             value = 1
         if (value == False):
             value = 0
-        command = f"W{pin:02d}{value}\n"
-        write_response = self.write_string_wait_for_response(command, f"W{pin:02d}:", wait_for_input_time)
+        command = f"W{pin:01d}{value}\n"
+        write_response = self.write_string_wait_for_response(command, f"W{pin:01d}:", wait_for_input_time)
         if (wait_for_input_time == 0):
             return True
         else:
@@ -202,8 +202,8 @@ class Ch32V305CCT6_test_tool:
             return True
         
     def digital_read(self, pin, wait_for_input_time=1):
-        command = f"R{pin:02d}\n"
-        responseHeader = f"R{pin:02d}:"
+        command = f"R{pin:01d}\n"
+        responseHeader = f"R{pin:01d}:"
         write_response = self.write_string_wait_for_response(command, responseHeader, wait_for_input_time)
         if (wait_for_input_time == 0):
             return None
