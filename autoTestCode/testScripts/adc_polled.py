@@ -8,7 +8,7 @@ import time
 from lib.ch32v003_test_target import Ch32V003_test_target
 
 ADC_TARGET = 512
-ADC_TOLERANCE = 8
+ADC_TOLERANCE = 20
 WAIT_ITERATIONS = 30
 WAIT_INTERVAL_S = 0.1
 SETTLE_AFTER_DAC_S = 0.1

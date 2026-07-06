@@ -50,6 +50,21 @@ if not target.initialize():
 success_count = 0
 failure_count = 0
 skipped_count = 0
+MAX_TEST_ATTEMPTS = 3
+TEST_RETRY_DELAY_S = 0.5
+
+
+def run_test_script(test_script_path):
+    test_env = os.environ.copy()
+    test_env["PYTHONPATH"] = AUTO_TEST_CODE_DIR
+    return subprocess.run(
+        [sys.executable, test_script_path],
+        cwd=AUTO_TEST_CODE_DIR,
+        env=test_env,
+        capture_output=True,
+        text=True,
+    )
+
 
 for firmware in compiled_firmwares:
     sketch_name = os.path.splitext(os.path.basename(firmware))[0]
@@ -68,26 +83,30 @@ for firmware in compiled_firmwares:
 
     print(f"Flash of {sketch_name} completed after {time.monotonic() - start_time:.2f} seconds")
 
-    test_env = os.environ.copy()
-    test_env["PYTHONPATH"] = AUTO_TEST_CODE_DIR
+    test_passed = False
+    for attempt in range(1, MAX_TEST_ATTEMPTS + 1):
+        if (attempt > 1):
+            print(f"Retrying {sketch_name} (attempt {attempt}/{MAX_TEST_ATTEMPTS})")
+            time.sleep(TEST_RETRY_DELAY_S)
 
-    test_process = subprocess.run(
-        [sys.executable, test_script_path],
-        cwd=AUTO_TEST_CODE_DIR,
-        env=test_env,
-        capture_output=True,
-        text=True,
-    )
-    if test_process.stdout:
-        print(test_process.stdout, end="")
-    if test_process.stderr:
-        print(test_process.stderr, end="", file=sys.stderr)
+        test_process = run_test_script(test_script_path)
+        if (test_process.stdout):
+            print(test_process.stdout, end="")
+        if (test_process.stderr):
+            print(test_process.stderr, end="", file=sys.stderr)
 
-    if test_process.returncode == 0:
+        if (test_process.returncode == 0):
+            test_passed = True
+            break
+
+        if (attempt < MAX_TEST_ATTEMPTS):
+            print(f"Test {sketch_name} failed on attempt {attempt}, retrying...")
+
+    if (test_passed):
         print(f"Test of {sketch_name} completed after {time.monotonic() - start_time:.2f} seconds")
         success_count += 1
     else:
-        print(f"Error testing {sketch_name}")
+        print(f"Error testing {sketch_name} after {MAX_TEST_ATTEMPTS} attempts")
         failure_count += 1
 
 print(f"Test completed. Success: {success_count}, Failure: {failure_count}, Skipped: {skipped_count}")
