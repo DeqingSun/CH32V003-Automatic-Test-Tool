@@ -179,6 +179,10 @@ class DigitalReadBody(BaseModel):
     pin: int = Field(ge=0, le=7)
 
 
+class DigitalReadManyBody(BaseModel):
+    pins: list[int] = Field(min_length=1, max_length=8)
+
+
 class AnalogWriteBody(BaseModel):
     pin: int = Field(ge=0, le=7)
     value: int = Field(ge=0, le=4095)
@@ -365,6 +369,32 @@ def api_digital_read(body: DigitalReadBody):
     if value is None:
         raise HTTPException(status_code=500, detail="Digital read failed")
     return {"ok": True, "pin": body.pin, "value": bool(value)}
+
+
+@app.post("/api/gpio/digital_read_many")
+def api_digital_read_many(body: DigitalReadManyBody):
+    """Batch mode-preserving reads (`r`) with short waits for UI polling."""
+    session.require_connected()
+    session.require_idle()
+    pins = []
+    seen = set()
+    for p in body.pins:
+        if p < 0 or p > 7:
+            raise HTTPException(status_code=400, detail=f"Invalid pin: {p}")
+        if p not in seen:
+            seen.add(p)
+            pins.append(p)
+    values: dict[str, bool] = {}
+    with session.lock:
+        tool = session.tool()
+        for pin in pins:
+            value = tool.digital_read(pin, 0.08)
+            if value is None:
+                raise HTTPException(
+                    status_code=500, detail=f"Digital read failed on PA{pin}"
+                )
+            values[str(pin)] = bool(value)
+    return {"ok": True, "values": values}
 
 
 @app.post("/api/gpio/pin_input")

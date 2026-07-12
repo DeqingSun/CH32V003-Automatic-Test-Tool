@@ -5,6 +5,8 @@ const MatrixView = (() => {
   let selectedX = null;
   let selectedY = null;
   let onChange = null;
+  /** pin 0..7 → { kind: null|'square'|'circle', high: boolean } */
+  const pinIo = Array.from({ length: 8 }, () => ({ kind: null, high: false }));
 
   /** Distinct from signal pins and from network palette. */
   const POWER_CLASS = { VSS: "power-vss", VDD: "power-vdd" };
@@ -134,6 +136,11 @@ const MatrixView = (() => {
     return name;
   }
 
+  function paIndexFromYName(name) {
+    const m = /^305_PA(\d)$/.exec(name);
+    return m ? Number(m[1]) : null;
+  }
+
   function fillNetList(id, names, side) {
     const el = document.getElementById(id);
     el.innerHTML = "";
@@ -144,13 +151,65 @@ const MatrixView = (() => {
       btn.dataset.net = name;
       btn.dataset.side = side;
       btn.title = name;
-      btn.textContent = shortLabel(name);
+      const label = document.createElement("span");
+      label.className = "net-label";
+      label.textContent = shortLabel(name);
+      btn.appendChild(label);
+      if (side === "y") {
+        const pa = paIndexFromYName(name);
+        if (pa !== null) {
+          btn.dataset.pa = String(pa);
+          const mark = document.createElement("span");
+          mark.className = "io-mark";
+          mark.setAttribute("aria-hidden", "true");
+          btn.appendChild(mark);
+        }
+      }
       btn.addEventListener("click", () => {
         if (side === "x") selectX(name);
         else selectY(name);
       });
       el.appendChild(btn);
     }
+    if (side === "y") applyPinIoMarks();
+  }
+
+  function applyPinIoMarks() {
+    document.querySelectorAll("#y-nets .net-btn[data-pa]").forEach((btn) => {
+      const pa = Number(btn.dataset.pa);
+      const mark = btn.querySelector(".io-mark");
+      if (!mark || pa < 0 || pa > 7) return;
+      const st = pinIo[pa];
+      mark.className = "io-mark";
+      if (!st.kind) return;
+      mark.classList.add(st.kind, st.high ? "high" : "low");
+    });
+  }
+
+  /** @param {number} pin 0..7 @param {'square'|'circle'|null} kind @param {boolean} [high] */
+  function setPinIoState(pin, kind, high) {
+    if (pin < 0 || pin > 7) return;
+    pinIo[pin] = { kind: kind || null, high: !!high };
+    applyPinIoMarks();
+  }
+
+  /** Update circle levels for multiple pins without changing square/output kinds. */
+  function setPinLevels(levels) {
+    for (const [key, high] of Object.entries(levels || {})) {
+      const pin = Number(key);
+      if (pin < 0 || pin > 7) continue;
+      if (pinIo[pin].kind === "circle") {
+        pinIo[pin].high = !!high;
+      }
+    }
+    applyPinIoMarks();
+  }
+
+  function clearPinIoStates() {
+    for (let i = 0; i < 8; i++) {
+      pinIo[i] = { kind: null, high: false };
+    }
+    applyPinIoMarks();
   }
 
   function selectX(name) {
@@ -242,6 +301,10 @@ const MatrixView = (() => {
     clearSelection,
     selectX,
     selectY,
+    setPinIoState,
+    setPinLevels,
+    clearPinIoStates,
+    paIndexFromYName,
     onSelectionChange(cb) { onChange = cb; },
   };
 })();

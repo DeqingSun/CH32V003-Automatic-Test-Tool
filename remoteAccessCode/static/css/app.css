@@ -372,6 +372,43 @@ button, input, select {
   min-width: 3.4rem;
   text-align: center;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.net-btn .net-label {
+  pointer-events: none;
+}
+
+.io-mark {
+  display: none;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.io-mark.square,
+.io-mark.circle {
+  display: inline-block;
+}
+
+.io-mark.square {
+  border-radius: 1px;
+}
+
+.io-mark.circle {
+  border-radius: 50%;
+}
+
+.io-mark.high {
+  background: #e06c75;
+}
+
+.io-mark.low {
+  background: #61afef;
 }
 
 .ssop {

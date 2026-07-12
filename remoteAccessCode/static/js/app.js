@@ -4,6 +4,15 @@
   let fwFile = null;
   let captureKind = "digital";
   let pollTimer = null;
+  let ioPollTimer = null;
+  let ioPollInFlight = false;
+  let lastBusy = "idle";
+  let matrixConnections = [];
+
+  /** @type {(null|'output'|'input')[]} */
+  const pinMode = Array(8).fill(null);
+  /** @type {boolean[]} */
+  const pinOutValue = Array(8).fill(false);
 
   function toast(msg, kind = "") {
     const el = document.getElementById("toast");
@@ -22,6 +31,57 @@
     });
   }
 
+  function syncPinIoMarkers(hideCircles) {
+    for (let pin = 0; pin < 8; pin++) {
+      if (pinMode[pin] === "output") {
+        MatrixView.setPinIoState(pin, "square", pinOutValue[pin]);
+      } else if (!hideCircles && pinMode[pin] !== "output") {
+        /* circle state applied by poll; clear if not connected */
+        const connected = matrixConnections.some(
+          (c) => MatrixView.paIndexFromYName(c.y_name) === pin
+        );
+        if (!connected) {
+          MatrixView.setPinIoState(pin, null, false);
+        }
+      } else {
+        /* busy: hide circles, keep squares already set above */
+        if (pinMode[pin] !== "output") {
+          MatrixView.setPinIoState(pin, null, false);
+        }
+      }
+    }
+  }
+
+  function setPinOutput(pin, value) {
+    pinMode[pin] = "output";
+    pinOutValue[pin] = !!value;
+    MatrixView.setPinIoState(pin, "square", pinOutValue[pin]);
+  }
+
+  function setPinInput(pin) {
+    pinMode[pin] = "input";
+    pinOutValue[pin] = false;
+    MatrixView.setPinIoState(pin, null, false);
+  }
+
+  function clearAllPinModes() {
+    for (let i = 0; i < 8; i++) {
+      pinMode[i] = "input";
+      pinOutValue[i] = false;
+    }
+    MatrixView.clearPinIoStates();
+  }
+
+  function clearAnalogChannels(channelMask) {
+    for (let i = 0; i < 8; i++) {
+      if (channelMask & (1 << i)) {
+        pinMode[i] = "input";
+        pinOutValue[i] = false;
+        MatrixView.setPinIoState(i, null, false);
+      }
+    }
+  }
+
   async function refreshStatus() {
     try {
       const st = await Api.get("/api/status");
@@ -38,6 +98,10 @@
         pill.textContent = st.port ? `Online · ${st.port}` : "Online";
       }
       busy.textContent = st.busy && st.busy !== "idle" ? `Busy: ${st.busy}` : "";
+      lastBusy = st.busy || "idle";
+      if (lastBusy !== "idle") {
+        syncPinIoMarkers(true);
+      }
       return st;
     } catch (e) {
       document.getElementById("conn-indicator").className = "conn-pill offline";
@@ -48,7 +112,62 @@
 
   async function refreshMatrix() {
     const state = await Api.get("/api/matrix/state");
-    MatrixView.setConnections(state.connections);
+    matrixConnections = state.connections || [];
+    MatrixView.setConnections(matrixConnections);
+    syncPinIoMarkers(lastBusy !== "idle");
+  }
+
+  function connectedInputPins() {
+    const pins = [];
+    const seen = new Set();
+    for (const c of matrixConnections) {
+      const pa = MatrixView.paIndexFromYName(c.y_name);
+      if (pa === null || seen.has(pa)) continue;
+      if (pinMode[pa] === "output") continue;
+      seen.add(pa);
+      pins.push(pa);
+    }
+    return pins;
+  }
+
+  async function pollPinLevels() {
+    if (ioPollInFlight) return;
+    if (lastBusy !== "idle") {
+      syncPinIoMarkers(true);
+      return;
+    }
+    const pins = connectedInputPins();
+    if (!pins.length) {
+      syncPinIoMarkers(false);
+      return;
+    }
+    ioPollInFlight = true;
+    try {
+      const st = await Api.get("/api/status");
+      if (!st || !st.connected || (st.busy && st.busy !== "idle")) {
+        lastBusy = (st && st.busy) || "idle";
+        syncPinIoMarkers(true);
+        return;
+      }
+      lastBusy = "idle";
+      const res = await Api.post("/api/gpio/digital_read_many", { pins });
+      for (const pin of pins) {
+        if (pinMode[pin] === "output") continue;
+        const high = !!(res.values && res.values[String(pin)]);
+        MatrixView.setPinIoState(pin, "circle", high);
+      }
+      /* clear circles on disconnected non-output pins */
+      for (let i = 0; i < 8; i++) {
+        if (pinMode[i] === "output") continue;
+        if (!pins.includes(i)) {
+          MatrixView.setPinIoState(i, null, false);
+        }
+      }
+    } catch {
+      /* ignore transient poll errors (busy race, disconnect) */
+    } finally {
+      ioPollInFlight = false;
+    }
   }
 
   async function boot() {
@@ -83,6 +202,8 @@
     }
 
     setInterval(refreshStatus, 2000);
+    if (ioPollTimer) clearInterval(ioPollTimer);
+    ioPollTimer = setInterval(pollPinLevels, 100);
   }
 
   document.getElementById("mode-nav").addEventListener("click", (e) => {
@@ -115,7 +236,9 @@
   document.getElementById("btn-init").addEventListener("click", async () => {
     try {
       await Api.post("/api/init", {});
+      matrixConnections = [];
       MatrixView.setConnections([]);
+      clearAllPinModes();
       toast("Matrix reset", "ok");
     } catch (e) {
       toast(e.message, "error");
@@ -130,7 +253,8 @@
     }
     try {
       const res = await Api.post("/api/matrix/connect", { x_name: x, y_name: y });
-      MatrixView.setConnections(res.connections);
+      matrixConnections = res.connections || [];
+      MatrixView.setConnections(matrixConnections);
       toast(`Connected ${x} ↔ ${y}`, "ok");
     } catch (e) {
       toast(e.message, "error");
@@ -145,7 +269,9 @@
     }
     try {
       const res = await Api.post("/api/matrix/disconnect", { x_name: x, y_name: y });
-      MatrixView.setConnections(res.connections);
+      matrixConnections = res.connections || [];
+      MatrixView.setConnections(matrixConnections);
+      syncPinIoMarkers(lastBusy !== "idle");
       toast(`Disconnected ${x} ↔ ${y}`, "ok");
     } catch (e) {
       toast(e.message, "error");
@@ -158,8 +284,10 @@
 
   document.getElementById("btn-dig-high").addEventListener("click", async () => {
     try {
-      await Api.post("/api/gpio/digital_write", { pin: gpioPin(), value: true });
-      document.getElementById("gpio-result").textContent = `PA${gpioPin()} = HIGH`;
+      const pin = gpioPin();
+      await Api.post("/api/gpio/digital_write", { pin, value: true });
+      setPinOutput(pin, true);
+      document.getElementById("gpio-result").textContent = `PA${pin} = HIGH`;
     } catch (e) {
       toast(e.message, "error");
     }
@@ -167,8 +295,10 @@
 
   document.getElementById("btn-dig-low").addEventListener("click", async () => {
     try {
-      await Api.post("/api/gpio/digital_write", { pin: gpioPin(), value: false });
-      document.getElementById("gpio-result").textContent = `PA${gpioPin()} = LOW`;
+      const pin = gpioPin();
+      await Api.post("/api/gpio/digital_write", { pin, value: false });
+      setPinOutput(pin, false);
+      document.getElementById("gpio-result").textContent = `PA${pin} = LOW`;
     } catch (e) {
       toast(e.message, "error");
     }
@@ -186,9 +316,11 @@
 
   document.getElementById("btn-pin-input").addEventListener("click", async () => {
     try {
-      await Api.post("/api/gpio/pin_input", { pin: gpioPin() });
+      const pin = gpioPin();
+      await Api.post("/api/gpio/pin_input", { pin });
+      setPinInput(pin);
       document.getElementById("gpio-result").textContent =
-        `PA${gpioPin()} = INPUT (Hi-Z)`;
+        `PA${pin} = INPUT (Hi-Z)`;
     } catch (e) {
       toast(e.message, "error");
     }
@@ -197,8 +329,13 @@
   document.getElementById("btn-ana-write").addEventListener("click", async () => {
     const value = Number(document.getElementById("analog-value").value);
     try {
-      await Api.post("/api/gpio/analog_write", { pin: gpioPin(), value });
-      document.getElementById("gpio-result").textContent = `PA${gpioPin()} analog write ${value}`;
+      const pin = gpioPin();
+      await Api.post("/api/gpio/analog_write", { pin, value });
+      /* DAC drive — treat as output-ish for indicator purposes (no square; clear mode) */
+      pinMode[pin] = "input";
+      pinOutValue[pin] = false;
+      MatrixView.setPinIoState(pin, null, false);
+      document.getElementById("gpio-result").textContent = `PA${pin} analog write ${value}`;
     } catch (e) {
       toast(e.message, "error");
     }
@@ -206,7 +343,11 @@
 
   document.getElementById("btn-ana-read").addEventListener("click", async () => {
     try {
-      const res = await Api.post("/api/gpio/analog_read", { pin: gpioPin() });
+      const pin = gpioPin();
+      const res = await Api.post("/api/gpio/analog_read", { pin });
+      pinMode[pin] = "input";
+      pinOutValue[pin] = false;
+      MatrixView.setPinIoState(pin, null, false);
       document.getElementById("gpio-result").textContent = `PA${res.pin} ADC = ${res.value}`;
     } catch (e) {
       toast(e.message, "error");
@@ -232,10 +373,12 @@
           statusEl.textContent = `Done · ${msg.result.sample_count} samples @ ${msg.result.rate_hz} Hz`;
           applyResult(msg.result);
           toast("Capture complete", "ok");
+          lastBusy = "idle";
           ws.close();
         } else if (msg.type === "error") {
           statusEl.textContent = `Error: ${msg.error}`;
           toast(msg.error, "error");
+          lastBusy = "idle";
           ws.close();
         }
       };
@@ -255,10 +398,12 @@
           const result = await Api.get(resultPath);
           applyResult(result);
           toast("Capture complete", "ok");
+          lastBusy = "idle";
           if (ws && ws.readyState === WebSocket.OPEN) ws.close();
         } else if (st.state === "error") {
           clearInterval(pollTimer);
           pollTimer = null;
+          lastBusy = "idle";
           toast(st.error || "Capture failed", "error");
         }
       } catch (e) {
@@ -272,6 +417,9 @@
     const sample_count = Number(document.getElementById("la-count").value);
     try {
       await Api.post("/api/la/start", { rate_hz, sample_count });
+      lastBusy = "la";
+      syncPinIoMarkers(true);
+      /* Digital LA preserves OUTPUT — keep square tracking */
       watchCapture("/ws/la", "/api/la/status", "/api/la/result", (r) => {
         WaveformViewer.setDigital(r);
       });
@@ -293,6 +441,9 @@
     }
     try {
       await Api.post("/api/analog/start", { rate_hz, sample_count, channel_mask });
+      clearAnalogChannels(channel_mask);
+      lastBusy = "analog";
+      syncPinIoMarkers(true);
       watchCapture("/ws/analog", "/api/analog/status", "/api/analog/result", (r) => {
         WaveformViewer.setAnalog(r);
       });
@@ -334,13 +485,18 @@
     const fd = new FormData();
     fd.append("file", fwFile, fwFile.name);
     try {
+      lastBusy = "flash";
+      clearAllPinModes();
+      syncPinIoMarkers(true);
       const res = await Api.upload("/api/firmware/upload", fd);
       status.textContent = `Flashed OK: ${res.filename}`;
       toast("Firmware flashed", "ok");
+      lastBusy = "idle";
       await refreshMatrix();
     } catch (e) {
       status.textContent = `Failed: ${e.message}`;
       toast(e.message, "error");
+      lastBusy = "idle";
     }
   });
 
