@@ -36,6 +36,7 @@ from access_queue import (  # noqa: E402
 
 STATIC_DIR = ROOT / "static"
 PORT = int(os.environ.get("REMOTE_ACCESS_PORT", "8000"))
+DUT_FLASH_MAX_BYTES = 16384  # CH32V003 code flash size
 
 # SSOP20 physical layout (top view, pin 1 top-left)
 DUT_LEFT = [
@@ -688,27 +689,43 @@ async def api_firmware_upload(request: Request, file: UploadFile = File(...)):
     _require_control(request)
     session.require_connected()
     session.require_idle()
-    name = file.filename or "firmware.bin"
-    if not name.lower().endswith((".bin", ".hex")):
+
+    raw_name = file.filename or "firmware.bin"
+    # Basename only — never use client path components for anything executable.
+    display_name = Path(raw_name).name.replace("\x00", "")
+    suffix = Path(display_name).suffix.lower()
+    if suffix not in (".bin", ".hex"):
         raise HTTPException(status_code=400, detail="Upload a .bin or .hex file")
+    if not display_name.lower().endswith(suffix):
+        raise HTTPException(status_code=400, detail="Upload a .bin or .hex file")
+    safe_display = f"firmware{suffix}"
+    # Keep a short printable label for the UI if the basename looks safe.
+    if display_name.replace(".", "").replace("_", "").replace("-", "").isalnum() and len(display_name) <= 64:
+        safe_display = display_name
 
     session.busy = "flash"
     tmp_path = None
     try:
-        suffix = Path(name).suffix or ".bin"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp_path = tmp.name
+            total = 0
             while True:
-                chunk = await file.read(1024 * 256)
+                chunk = await file.read(1024 * 64)
                 if not chunk:
                     break
+                total += len(chunk)
+                if total > DUT_FLASH_MAX_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Firmware exceeds CH32V003 flash size ({DUT_FLASH_MAX_BYTES} bytes)",
+                    )
                 tmp.write(chunk)
 
         with session.lock:
             ok = session.target.flashFirmware(tmp_path)
         if not ok:
             raise HTTPException(status_code=500, detail="Firmware flash failed")
-        return {"ok": True, "filename": name}
+        return {"ok": True, "filename": safe_display}
     finally:
         session.busy = "idle"
         access.tick("idle")

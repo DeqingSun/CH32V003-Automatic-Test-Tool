@@ -106,19 +106,16 @@ class Ch32V003_test_target:
 
         ok = False
         try:
-            #use the minichlink to flash the firmware
-            #sample command: ./toolBinary/minichlink_mac -C linke -l 2C868F06B189
-            command_minichlink = f"{minichlink} -C linke"
-            if (wch_linke_serial_number is not None):
-                command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
-            #run command and see if there is "Detected CH32V003" in the output
-            result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
+            # Argv list only — never shell=True (paths must not be interpreted by a shell).
+            detect_cmd = [minichlink, "-C", "linke"]
+            if wch_linke_serial_number is not None:
+                detect_cmd.extend(["-l", str(wch_linke_serial_number)])
+            result = subprocess.run(detect_cmd, capture_output=True, text=True)
             if not (("Detected CH32V003" in result.stdout) or ("Detected CH32V003" in result.stderr)):
                 print("CH32V003 target not found")
             else:
-                #flash the firmware
-                command_flash = command_minichlink + f" -w {firmware_path} 0x08000000"
-                result = subprocess.run(command_flash, shell=True, capture_output=True, text=True)
+                flash_cmd = detect_cmd + ["-w", firmware_path, "0x08000000"]
+                result = subprocess.run(flash_cmd, capture_output=True, text=True)
                 if not ("Image written" in result.stdout):
                     print("Firmware flashing failed")
                 else:
