@@ -93,6 +93,16 @@ class Ch32V003_test_target:
         out = (result.stdout or "") + (result.stderr or "")
         return "Detected CH32V003" in out
 
+    def _minichlink_detect_info(self, minichlink, wch_linke_serial_number=None):
+        cmd = self._minichlink_linke_cmd(minichlink, wch_linke_serial_number)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        out = (result.stdout or "") + (result.stderr or "")
+        return {
+            "out": out,
+            "detected": "Detected CH32V003" in out,
+            "rdp_enabled": "Read protection: enabled" in out,
+        }
+
     def _write_firmware_image(self, minichlink, firmware_path, wch_linke_serial_number=None,
                               halt=False):
         # halt=True: -a ... -b so the first attach after NRST release can program
@@ -106,7 +116,98 @@ class Ch32V003_test_target:
         cmd = self._minichlink_linke_cmd(minichlink, wch_linke_serial_number, *extra)
         result = subprocess.run(cmd, capture_output=True, text=True)
         out = (result.stdout or "") + (result.stderr or "")
-        return "Image written" in out
+        return "Image written" in out, out
+
+    def _route_swio(self):
+        tt = self.test_tool
+        tt.connect_pins(tt.SSOP20_PIN18_MAP, tt.Y_305_PA7, 0.5)  # PD1 / SWIO
+        tt.connect_pins(tt.WCH_LINKE_SWDIO, tt.Y_305_PA7, 0.5)
+
+    def _option_bytes_write_protected(self, minichlink, wch_linke_serial_number=None):
+        """True if RDPR/WRPR block programming (minichlink -i)."""
+        cmd = self._minichlink_linke_cmd(minichlink, wch_linke_serial_number, "-i")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        out = (result.stdout or "") + (result.stderr or "")
+        if "Read protection: enabled" in out:
+            return True
+        # WRPR0/1 displayed as nWRPR/WRPR halfwords; protected pages use WRPR=0x00
+        # e.g. WRPR1/WRPR0: ff00/ff00  vs unlocked 00ff/00ff
+        for line in out.splitlines():
+            if "WRPR1/WRPR0" in line and "ff00" in line.replace(" ", "").lower():
+                return True
+        return False
+
+    def _clear_flash_protection(self, minichlink, wch_linke_serial_number=None):
+        """Clear RDPR/WRPR, then power-cycle so option bytes reload.
+
+        RDPR-only locks usually clear with minichlink -p.
+        WRPR-only locks often ignore -p alone; cycling -P then -p forces a full
+        option-byte rewrite (LinkE) and unlocks pages. -E alone does not clear WRPR.
+        """
+        print("Clearing flash protection (minichlink -p)...")
+
+        def run_p_or_P(flag):
+            cmd = self._minichlink_linke_cmd(minichlink, wch_linke_serial_number, flag)
+            return subprocess.run(
+                cmd, capture_output=True, text=True, timeout=60, input="\n")
+
+        run_p_or_P("-p")
+        time.sleep(0.3)
+
+        if not self.set_3V3_power(False, wch_linke_serial_number):
+            return False
+        time.sleep(0.4)
+        if not self.set_3V3_power(True, wch_linke_serial_number):
+            return False
+        time.sleep(0.25)
+        if not self.test_tool.initailize(0.3):
+            return False
+        self._route_swio()
+
+        if not self._option_bytes_write_protected(minichlink, wch_linke_serial_number):
+            info = self._minichlink_detect_info(minichlink, wch_linke_serial_number)
+            if info["detected"] and not info["rdp_enabled"]:
+                print("Flash protection cleared")
+                return True
+
+        # WRPR page-protect: enable RDP then disable to force OB rewrite.
+        print("WRPR still set; cycling -P then -p...")
+        run_p_or_P("-P")
+        time.sleep(0.4)
+        run_p_or_P("-p")
+        time.sleep(0.5)
+        if not self.set_3V3_power(False, wch_linke_serial_number):
+            return False
+        time.sleep(0.4)
+        if not self.set_3V3_power(True, wch_linke_serial_number):
+            return False
+        time.sleep(0.25)
+        if not self.test_tool.initailize(0.3):
+            return False
+        self._route_swio()
+
+        info = self._minichlink_detect_info(minichlink, wch_linke_serial_number)
+        if not info["detected"]:
+            print("CH32V003 not detected after clearing protection")
+            return False
+        if info["rdp_enabled"] or self._option_bytes_write_protected(
+                minichlink, wch_linke_serial_number):
+            print("Flash protection still active after -P/-p")
+            return False
+        print("Flash protection cleared")
+        return True
+
+    def _recover_protection_and_write(self, minichlink, firmware_path,
+                                      wch_linke_serial_number=None):
+        if not self._clear_flash_protection(minichlink, wch_linke_serial_number):
+            return False
+        ok, _ = self._write_firmware_image(
+            minichlink, firmware_path, wch_linke_serial_number, halt=True)
+        if not ok:
+            print("Firmware flashing failed after clearing protection")
+            return False
+        print("Firmware written after clearing flash protection")
+        return True
 
     def _recover_soft_brick_and_write(self, minichlink, firmware_path,
                                       wch_linke_serial_number=None, attempts=4):
@@ -148,7 +249,7 @@ class Ch32V003_test_target:
             tt.digital_write(0, 1, 0.02)
 
             if self._write_firmware_image(
-                    minichlink, firmware_path, wch_linke_serial_number, halt=True):
+                    minichlink, firmware_path, wch_linke_serial_number, halt=True)[0]:
                 print("Firmware written after NRST power-cycle recovery")
                 return True
             print(f"NRST recovery write failed (attempt {attempt}/{attempts})")
@@ -178,24 +279,75 @@ class Ch32V003_test_target:
 
         #for ch32v003, the SWIO is on PD1, pin 18 on TSSOP20 package
         #we can route the SWIO to on board WCH-LINKE SWDIO via any input gpio on CH32V305
-        self.test_tool.connect_pins(self.test_tool.SSOP20_PIN18_MAP, self.test_tool.Y_305_PA7, 0.5) #C117
-        self.test_tool.connect_pins(self.test_tool.WCH_LINKE_SWDIO, self.test_tool.Y_305_PA7, 0.5)  #C087
+        self._route_swio()
 
         ok = False
         try:
             # Argv list only — never shell=True (paths must not be interpreted by a shell).
-            if self._detect_ch32v003(minichlink, wch_linke_serial_number):
-                if self._write_firmware_image(minichlink, firmware_path, wch_linke_serial_number):
-                    ok = True
+            info = self._minichlink_detect_info(minichlink, wch_linke_serial_number)
+            if not info["detected"]:
+                # Option-byte changes often need a power reload before LinkE
+                # can talk reliably again.
+                print("CH32V003 target not found; power-cycling and retrying detect...")
+                self.set_3V3_power(False, wch_linke_serial_number)
+                time.sleep(0.4)
+                self.set_3V3_power(True, wch_linke_serial_number)
+                time.sleep(0.2)
+                if not self.test_tool.initailize(0.3):
+                    return False
+                self._route_swio()
+                info = self._minichlink_detect_info(minichlink, wch_linke_serial_number)
+
+            if info["detected"]:
+                protected = info["rdp_enabled"] or self._option_bytes_write_protected(
+                    minichlink, wch_linke_serial_number)
+                if protected:
+                    # RDPR and/or WRPR option-byte lock.
+                    ok = self._recover_protection_and_write(
+                        minichlink, firmware_path, wch_linke_serial_number)
                 else:
-                    print("Firmware flashing failed")
+                    wrote, write_out = self._write_firmware_image(
+                        minichlink, firmware_path, wch_linke_serial_number)
+                    if wrote:
+                        ok = True
+                    else:
+                        print("Firmware flashing failed")
+                        # WRPR/RDPR can show up as Memory Protection Error even
+                        # when the first detect line looked unlocked.
+                        if "Memory Protection Error" in write_out or info["rdp_enabled"]:
+                            ok = self._recover_protection_and_write(
+                                minichlink, firmware_path, wch_linke_serial_number)
+                        else:
+                            if not self.test_tool.initailize(0.3):
+                                return False
+                            self._route_swio()
+                            if self._option_bytes_write_protected(
+                                    minichlink, wch_linke_serial_number):
+                                ok = self._recover_protection_and_write(
+                                    minichlink, firmware_path, wch_linke_serial_number)
             else:
                 print("CH32V003 target not found")
 
             # Soft-brick (DisableSDI / PD1 reuse): NRST hold + 3V3 cycle, then halt+write.
-            if not ok:
+            if not ok and not info["detected"]:
                 ok = self._recover_soft_brick_and_write(
                     minichlink, firmware_path, wch_linke_serial_number)
+
+            # Last chance: option-byte lock or SDI brick after a flaky first pass.
+            if not ok:
+                if not self.test_tool.initailize(0.3):
+                    return False
+                self._route_swio()
+                info = self._minichlink_detect_info(minichlink, wch_linke_serial_number)
+                if info["detected"] and (
+                        info["rdp_enabled"]
+                        or self._option_bytes_write_protected(
+                            minichlink, wch_linke_serial_number)):
+                    ok = self._recover_protection_and_write(
+                        minichlink, firmware_path, wch_linke_serial_number)
+                elif not info["detected"]:
+                    ok = self._recover_soft_brick_and_write(
+                        minichlink, firmware_path, wch_linke_serial_number)
         finally:
             # Clear SWIO hookup and restore the user's prior matrix connections.
             self.test_tool.initailize(0.5)
