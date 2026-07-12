@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 
 from .ch32V305CCT6_test_tool import Ch32V305CCT6_test_tool
 from .minichlink_util import locate_minichlink
@@ -79,6 +80,82 @@ class Ch32V003_test_target:
     def locateMinichlink(self):
         return locate_minichlink()
 
+    def _minichlink_linke_cmd(self, minichlink, wch_linke_serial_number=None, *extra):
+        cmd = [minichlink, "-C", "linke"]
+        if wch_linke_serial_number is not None:
+            cmd.extend(["-l", str(wch_linke_serial_number)])
+        cmd.extend(extra)
+        return cmd
+
+    def _detect_ch32v003(self, minichlink, wch_linke_serial_number=None):
+        cmd = self._minichlink_linke_cmd(minichlink, wch_linke_serial_number)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        out = (result.stdout or "") + (result.stderr or "")
+        return "Detected CH32V003" in out
+
+    def _write_firmware_image(self, minichlink, firmware_path, wch_linke_serial_number=None,
+                              halt=False):
+        # halt=True: -a ... -b so the first attach after NRST release can program
+        # before DisableSDI()/PD1 reuse runs again.
+        extra = []
+        if halt:
+            extra.append("-a")
+        extra.extend(["-w", firmware_path, "0x08000000"])
+        if halt:
+            extra.append("-b")
+        cmd = self._minichlink_linke_cmd(minichlink, wch_linke_serial_number, *extra)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        out = (result.stdout or "") + (result.stderr or "")
+        return "Image written" in out
+
+    def _recover_soft_brick_and_write(self, minichlink, firmware_path,
+                                      wch_linke_serial_number=None, attempts=4):
+        """Recover SDI-disabled DUT via NRST hold + 3V3 cycle, then halt+write.
+
+        Critical: after releasing NRST, the *first* minichlink attach must be the
+        write. A prior detect burns the boot window; clearing the matrix after
+        release also loses the race to DisableSDI().
+        """
+        print("Trying NRST-hold power-cycle recovery...")
+        tt = self.test_tool
+
+        for attempt in range(1, attempts + 1):
+            if not tt.initailize(0.5):
+                return False
+
+            if not tt.digital_write(0, 0, 0.2):
+                print("Failed to drive NRST low")
+                return False
+            tt.connect_pins(tt.SSOP20_PIN4_MAP, tt.Y_305_PA0, 0.5)   # PD7 / NRST
+            tt.connect_pins(tt.SSOP20_PIN18_MAP, tt.Y_305_PA7, 0.5)  # PD1 / SWIO
+            tt.connect_pins(tt.WCH_LINKE_SWDIO, tt.Y_305_PA7, 0.5)
+            tt.digital_write(0, 0, 0.1)
+
+            if not self.set_3V3_power(False, wch_linke_serial_number):
+                return False
+            time.sleep(0.4)
+            tt.digital_write(0, 0, 0.1)
+            if not self.set_3V3_power(True, wch_linke_serial_number):
+                return False
+            time.sleep(0.15)
+
+            # Optional mass-erase attempt while held (may no-op; still OK).
+            subprocess.run(
+                self._minichlink_linke_cmd(minichlink, wch_linke_serial_number, "-u"),
+                capture_output=True, text=True, timeout=20)
+
+            # Release NRST; keep SWIO routed — do not re-init the matrix here.
+            tt.digital_write(0, 1, 0.02)
+
+            if self._write_firmware_image(
+                    minichlink, firmware_path, wch_linke_serial_number, halt=True):
+                print("Firmware written after NRST power-cycle recovery")
+                return True
+            print(f"NRST recovery write failed (attempt {attempt}/{attempts})")
+
+        print("Firmware flashing failed after NRST recovery")
+        return False
+
     def flashFirmware(self, firmware_path, wch_linke_serial_number = None):
         #check if the firmware file exists
         if (not os.path.exists(firmware_path)):
@@ -107,19 +184,18 @@ class Ch32V003_test_target:
         ok = False
         try:
             # Argv list only — never shell=True (paths must not be interpreted by a shell).
-            detect_cmd = [minichlink, "-C", "linke"]
-            if wch_linke_serial_number is not None:
-                detect_cmd.extend(["-l", str(wch_linke_serial_number)])
-            result = subprocess.run(detect_cmd, capture_output=True, text=True)
-            if not (("Detected CH32V003" in result.stdout) or ("Detected CH32V003" in result.stderr)):
-                print("CH32V003 target not found")
-            else:
-                flash_cmd = detect_cmd + ["-w", firmware_path, "0x08000000"]
-                result = subprocess.run(flash_cmd, capture_output=True, text=True)
-                if not ("Image written" in result.stdout):
-                    print("Firmware flashing failed")
-                else:
+            if self._detect_ch32v003(minichlink, wch_linke_serial_number):
+                if self._write_firmware_image(minichlink, firmware_path, wch_linke_serial_number):
                     ok = True
+                else:
+                    print("Firmware flashing failed")
+            else:
+                print("CH32V003 target not found")
+
+            # Soft-brick (DisableSDI / PD1 reuse): NRST hold + 3V3 cycle, then halt+write.
+            if not ok:
+                ok = self._recover_soft_brick_and_write(
+                    minichlink, firmware_path, wch_linke_serial_number)
         finally:
             # Clear SWIO hookup and restore the user's prior matrix connections.
             self.test_tool.initailize(0.5)
@@ -179,36 +255,35 @@ class Ch32V003_test_target:
         return Ch32V305CCT6_test_tool.build_digital_pulse_train(pin, pulse_count)
 
     def set_3V3_power(self, on_off, wch_linke_serial_number = None):
-        # minichlink -k3 -C linke
-        # minichlink -kt -C linke
+        # minichlink -k3 -C linke / minichlink -kt -C linke
         minichlink = self.locateMinichlink()
         if (not minichlink):
             print("Minichlink not found")
             return False
 
-        command_minichlink = f"{minichlink} -k{3 if on_off else 't'} -C linke"
-
-        if (wch_linke_serial_number is not None):
-            command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
-        result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
-        if not ("Skipping programmer initialization" in result.stdout):
+        cmd = [minichlink, f"-k{'3' if on_off else 't'}", "-C", "linke"]
+        if wch_linke_serial_number is not None:
+            cmd.extend(["-l", str(wch_linke_serial_number)])
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        out = (result.stdout or "") + (result.stderr or "")
+        if "Skipping programmer initialization" not in out:
             print("Failed to set 3V3 power")
             return False
         return True
 
     def set_5V_power(self, on_off, wch_linke_serial_number = None):
-        # minichlink -k5 -C linke
-        # minichlink -kf -C linke
+        # minichlink -k5 -C linke / minichlink -kf -C linke
         minichlink = self.locateMinichlink()
         if (not minichlink):
             print("Minichlink not found")
             return False
 
-        command_minichlink = f"{minichlink} -k{5 if on_off else 'f'} -C linke"
-        if (wch_linke_serial_number is not None):
-            command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
-        result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
-        if not ("Skipping programmer initialization" in result.stdout):
+        cmd = [minichlink, f"-k{'5' if on_off else 'f'}", "-C", "linke"]
+        if wch_linke_serial_number is not None:
+            cmd.extend(["-l", str(wch_linke_serial_number)])
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        out = (result.stdout or "") + (result.stderr or "")
+        if "Skipping programmer initialization" not in out:
             print("Failed to set 5V power")
             return False
         return True
