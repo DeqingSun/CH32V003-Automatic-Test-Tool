@@ -41,5 +41,30 @@ python3 server.py
 
 The remote access server is ready on LAN.
 
+## Setup tunnel for internet access
 
+Use cloudflare tunnel
 
+in cloudflare dashboard, networking->tunnels. Create tunnel
+
+I give it name ch32v003_remote
+
+Setup Environment choose Debian arm64, copy commands and run as service
+
+After running "Install as service"
+
+The cloudflare allow us to go forward
+
+then
+
+Dashboard → Networks → Tunnels -> Open your tunnel (e.g. ch32v003_remote) Go to Routes, add route , Add published application Subdomain: ch32v003 Service URL: http://localhost:8000
+
+```
+nohup python3 server.py > /dev/null 2>&1 &
+```
+
+and https://ch32v003.thinkcreate.us/ works!
+
+to kill it, find ID
+
+ps aux | grep server.py
