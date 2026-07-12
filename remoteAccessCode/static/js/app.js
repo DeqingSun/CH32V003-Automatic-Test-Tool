@@ -206,6 +206,7 @@
     } catch {
       /* disconnected */
     }
+    await loadFirmwareSamples();
 
     setInterval(refreshStatus, 2000);
     scheduleIoPoll();
@@ -482,14 +483,73 @@
   document.getElementById("btn-fit").addEventListener("click", () => WaveformViewer.fit());
   document.getElementById("btn-reset-view").addEventListener("click", () => WaveformViewer.reset());
 
-  function setFirmwareFile(file) {
+  function setFirmwareFile(file, selectedSampleName) {
     fwFile = file;
     document.getElementById("fw-name").textContent = file ? file.name : "No file selected";
     document.getElementById("btn-flash").disabled = !file;
+    const sel = document.getElementById("fw-samples");
+    if (sel) {
+      sel.value = selectedSampleName || "";
+    }
   }
 
+  async function loadFirmwareSamples() {
+    const sel = document.getElementById("fw-samples");
+    sel.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "— Choose a sample —";
+    sel.appendChild(placeholder);
+    try {
+      const res = await Api.get("/api/firmware/samples");
+      const samples = (res && res.samples) || [];
+      if (!samples.length) {
+        placeholder.textContent = "No samples in sample_bin/";
+        sel.disabled = true;
+        return;
+      }
+      for (const sample of samples) {
+        const opt = document.createElement("option");
+        opt.value = sample.name;
+        opt.textContent = sample.name.replace(/\.bin$/i, "");
+        opt.dataset.url = sample.url;
+        sel.appendChild(opt);
+      }
+      sel.disabled = false;
+    } catch (e) {
+      placeholder.textContent = "Could not load samples";
+      sel.disabled = true;
+    }
+  }
+
+  document.getElementById("fw-samples").addEventListener("change", async (e) => {
+    const sel = e.target;
+    const name = sel.value;
+    if (!name) {
+      setFirmwareFile(null, null);
+      document.getElementById("fw-status").textContent = "Ready";
+      return;
+    }
+    const opt = sel.selectedOptions[0];
+    const url = opt && opt.dataset.url;
+    if (!url) return;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`Failed to load ${name}`);
+      const blob = await r.blob();
+      const file = new File([blob], name, { type: "application/octet-stream" });
+      setFirmwareFile(file, name);
+      document.getElementById("fw-status").textContent = `Selected sample: ${name}`;
+      toast(`Selected ${name}`, "ok");
+    } catch (err) {
+      sel.value = "";
+      setFirmwareFile(null, null);
+      toast(err.message, "error");
+    }
+  });
+
   document.getElementById("fw-file").addEventListener("change", (e) => {
-    setFirmwareFile(e.target.files[0] || null);
+    setFirmwareFile(e.target.files[0] || null, null);
   });
 
   const dropzone = document.getElementById("dropzone");
@@ -502,7 +562,7 @@
     e.preventDefault();
     dropzone.classList.remove("drag");
     const file = e.dataTransfer.files[0];
-    if (file) setFirmwareFile(file);
+    if (file) setFirmwareFile(file, null);
   });
 
   document.getElementById("btn-flash").addEventListener("click", async () => {

@@ -604,6 +604,25 @@ async def ws_analog(websocket: WebSocket):
 
 # ---- firmware ----
 
+@app.get("/api/firmware/samples")
+def api_firmware_samples():
+    """List bundled sample .bin/.hex files for try-without-upload."""
+    sample_dir = STATIC_DIR / "sample_bin"
+    if not sample_dir.is_dir():
+        return {"samples": []}
+    samples = []
+    for path in sorted(sample_dir.iterdir()):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in (".bin", ".hex"):
+            continue
+        samples.append({
+            "name": path.name,
+            "url": f"/static/sample_bin/{path.name}",
+        })
+    return {"samples": samples}
+
+
 @app.post("/api/firmware/upload")
 async def api_firmware_upload(file: UploadFile = File(...)):
     session.require_connected()

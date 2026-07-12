@@ -113,6 +113,12 @@
       <section class="panel hidden" id="panel-firmware">
         <h2>Firmware upload</h2>
         <p class="hint">Uploads a .bin/.hex, routes SWIO through the matrix, and flashes the DUT via WCH-LinkE.</p>
+        <div class="field">
+          <label>Sample firmware (try without a file)</label>
+          <select id="fw-samples">
+            <option value="">— Choose a sample —</option>
+          </select>
+        </div>
         <div id="dropzone" class="dropzone">
           <p>Drop firmware here or</p>
           <label class="btn primary file-label">
