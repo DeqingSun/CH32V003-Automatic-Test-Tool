@@ -105,7 +105,6 @@ const MatrixView = (() => {
     }
 
     fillNetList("probe-nets", pins.probe, "x");
-    fillNetList("linke-nets", pins.linke, "x");
     fillNetList("y-nets", pins.controller_y, "y");
     bindClearOnEmptyClick();
     renderHighlights();
@@ -119,6 +118,10 @@ const MatrixView = (() => {
     btn.dataset.side = "x";
     if (POWER_CLASS[name]) {
       btn.classList.add("power", POWER_CLASS[name]);
+      btn.textContent = right ? `${name} ${pinNum}` : `${pinNum} ${name}`;
+      btn.disabled = true;
+      btn.title = `${name} (not selectable)`;
+      return btn;
     }
     btn.textContent = right ? `${name} ${pinNum}` : `${pinNum} ${name}`;
     btn.addEventListener("click", () => selectX(name));
@@ -151,6 +154,8 @@ const MatrixView = (() => {
   }
 
   function selectX(name) {
+    if (POWER_CLASS[name]) return;
+    if (name.startsWith("WCH_LINKE_")) return;
     selectedX = name;
     document.getElementById("sel-x").textContent = name;
     renderHighlights();

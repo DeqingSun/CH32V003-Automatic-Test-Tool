@@ -65,6 +65,17 @@ LINKE_NETS = [
 ]
 CONTROLLER_Y = [f"305_PA{i}" for i in range(8)]
 
+# Remote matrix UI must not route power rails or LinkE programmer nets.
+MATRIX_X_BLOCKED = frozenset({"VSS", "VDD", *LINKE_NETS})
+
+
+def assert_matrix_x_allowed(name: str) -> None:
+    if name in MATRIX_X_BLOCKED or name.startswith("WCH_LINKE_"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Matrix X net not allowed from remote UI: {name}",
+        )
+
 
 class DeviceSession:
     def __init__(self) -> None:
@@ -111,6 +122,7 @@ class DeviceSession:
             raise HTTPException(status_code=409, detail=f"Busy: {self.busy}")
 
     def resolve_x(self, name: str) -> int:
+        assert_matrix_x_allowed(name)
         if name not in self.target.map_dict:
             raise HTTPException(status_code=400, detail=f"Unknown net: {name}")
         if name.startswith("305_PA"):
@@ -270,13 +282,17 @@ def api_reconnect():
 
 @app.get("/api/pins")
 def api_pins():
+    # Omit LinkE from the public pin catalog (flash still uses them internally).
     return {
         "dut_left": DUT_LEFT,
         "dut_right": DUT_RIGHT,
         "probe": PROBE_NETS,
-        "linke": LINKE_NETS,
+        "linke": [],
         "controller_y": CONTROLLER_Y,
-        "map": {k: v for k, v in session.target.map_dict.items()},
+        "map": {
+            k: v for k, v in session.target.map_dict.items()
+            if k not in MATRIX_X_BLOCKED and not k.startswith("WCH_LINKE_")
+        },
     }
 
 
