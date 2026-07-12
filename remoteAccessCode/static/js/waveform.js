@@ -234,11 +234,34 @@ const WaveformViewer = (() => {
       } else {
         const mid = yBase + rowH / 2;
         const amp = (rowH * 0.4) * yScale;
+        const yOfAdc = (adc) => {
+          const v = (adc / 4095) * 2 - 1;
+          return mid - v * amp - yOffset * rowH * 0.1;
+        };
+        const refs = [
+          { adc: 0, label: "0V" },
+          { adc: 4095, label: "3.3V" },
+        ];
+        for (const ref of refs) {
+          const y = yOfAdc(ref.adc);
+          if (y < yBase || y > yBase + rowH) continue;
+          ctx.strokeStyle = "#3a4a5c";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(marginL, y);
+          ctx.lineTo(marginL + plotW, y);
+          ctx.stroke();
+          ctx.fillStyle = "#8b9bb0";
+          ctx.fillText(ref.label, 8, y + 3);
+        }
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
         let first = true;
         for (let i = i0; i <= i1; i += step) {
           const x = marginL + ((i - viewStart) / span) * plotW;
-          const v = (samples[i] / 4095) * 2 - 1; // -1..1
-          const y = mid - v * amp - yOffset * rowH * 0.1;
+          const y = yOfAdc(samples[i]);
           if (first) {
             ctx.moveTo(x, y);
             first = false;
