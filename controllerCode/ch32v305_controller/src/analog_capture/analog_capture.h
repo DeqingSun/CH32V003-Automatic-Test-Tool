@@ -24,4 +24,7 @@ AnalogCapturePollState analogCapturePoll(Stream &out);
 void analogCaptureUpload(Stream &out, uint32_t timeSamples, uint8_t channelMask,
                          uint8_t numChannels);
 
+/** One-shot ADC1 read on PA0–PA7 (channels 0–7). Safe for PA6/PA7 (PinMap gap). */
+uint16_t readAdcChannel(uint8_t channel);
+
 #endif

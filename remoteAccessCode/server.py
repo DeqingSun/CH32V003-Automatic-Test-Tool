@@ -378,9 +378,12 @@ def api_analog_read(body: AnalogReadBody):
     session.require_connected()
     session.require_idle()
     with session.lock:
-        value = session.tool().analog_read(body.pin, 0.5)
+        value = session.tool().analog_read(body.pin, 1.0)
     if value is None:
-        raise HTTPException(status_code=500, detail="Analog read failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Analog read failed (no response — reflash controller if MCU hung on PA6/PA7)",
+        )
     return {"ok": True, "pin": body.pin, "value": int(value)}
 
 

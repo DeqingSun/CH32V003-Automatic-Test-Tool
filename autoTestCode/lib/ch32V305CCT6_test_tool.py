@@ -228,7 +228,10 @@ class Ch32V305CCT6_test_tool:
             if (len(write_response)>0):
                 try:
                     colon_pos = write_response.find(":")
-                    return (int(write_response[colon_pos+1:]))
+                    payload = write_response[colon_pos+1:].strip()
+                    if payload in ("not valid", "busy"):
+                        return None
+                    return int(payload)
                 except:
                     return None
             else:

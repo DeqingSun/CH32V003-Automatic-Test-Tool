@@ -174,9 +174,10 @@ void loop() {
               SerialUSB.print((char)':');
               if (pin >= 8) {
                 SerialUSB.println("not valid");
+              } else if (logicAnalyzerIsBusy() || analogCaptureIsBusy()) {
+                SerialUSB.println("busy");
               } else {
-                analogRead(pin);
-                SerialUSB.println(analogRead(pin));
+                SerialUSB.println(readAdcChannel(pin));
               }
             }
             break;

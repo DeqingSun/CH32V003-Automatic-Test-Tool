@@ -377,3 +377,58 @@ void analogCaptureUpload(Stream &out, uint32_t timeSamples, uint8_t channelMask,
   out.println("M:END");
   out.flush();
 }
+
+uint16_t readAdcChannel(uint8_t channel) {
+  if (channel >= 8) {
+    return 0;
+  }
+  if (ac_capture_busy || logicAnalyzerIsBusy()) {
+    return 0;
+  }
+
+  /* Avoid Arduino analogRead() — PinMap_ADC on CH32V305CCT6 only lists PA0–PA5,
+   * so analogRead(PA6/PA7) hits Error_Handler and hangs the USB command loop. */
+  if (channel == 4) {
+    pinMode(PA4_ALT2, INPUT);
+  } else if (channel == 5) {
+    pinMode(PA5_ALT2, INPUT);
+  }
+  pinMode(PA0 + channel, INPUT_ANALOG);
+
+  RCC_ADCCLKConfig(RCC_PCLK2_Div8);
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_GPIOA, ENABLE);
+
+  ADC_DeInit(ADC1);
+
+  ADC_InitTypeDef adcInit;
+  ADC_StructInit(&adcInit);
+  adcInit.ADC_Mode = ADC_Mode_Independent;
+  adcInit.ADC_ScanConvMode = DISABLE;
+  adcInit.ADC_ContinuousConvMode = DISABLE;
+  adcInit.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None;
+  adcInit.ADC_DataAlign = ADC_DataAlign_Right;
+  adcInit.ADC_NbrOfChannel = 1;
+  adcInit.ADC_OutputBuffer = ADC_OutputBuffer_Enable;
+  ADC_Init(ADC1, &adcInit);
+
+  ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_239Cycles5);
+  ADC_Cmd(ADC1, ENABLE);
+
+  ADC_BufferCmd(ADC1, DISABLE);
+  ADC_ResetCalibration(ADC1);
+  while (ADC_GetResetCalibrationStatus(ADC1)) {
+  }
+  ADC_StartCalibration(ADC1);
+  while (ADC_GetCalibrationStatus(ADC1)) {
+  }
+  ADC_BufferCmd(ADC1, ENABLE);
+
+  ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+  uint32_t start = millis();
+  while (ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC) == RESET) {
+    if ((millis() - start) > 20U) {
+      return 0;
+    }
+  }
+  return ADC_GetConversionValue(ADC1) & 0x0FFFU;
+}
