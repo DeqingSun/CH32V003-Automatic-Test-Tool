@@ -56,11 +56,9 @@ static bool laComputeTim7Period(uint32_t rateHz, uint16_t *psc, uint16_t *arr,
   return true;
 }
 
+/* Enable GPIOA clock only — do not change pin modes so OUTPUT drive is kept. */
 static void laConfigureInputs() {
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
-  for (int i = 0; i < 8; i++) {
-    pinMode(PA0 + i, INPUT);
-  }
 }
 
 static void laInitDmaChannel() {
