@@ -5,6 +5,7 @@ Dependencies:
   pip install -r controllerCode/requirements.txt
 """
 
+import argparse
 import sys
 import os
 import subprocess
@@ -21,7 +22,7 @@ from lib.minichlink_util import locate_minichlink
 minichlink_path = locate_minichlink()
 if not minichlink_path:
     sys.exit(1)
-ch32v305_controller_firmware_path = "/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/controllerCode/ch32v305_controller/build/ch32v305_controller_20260629.bin"
+ch32v305_controller_firmware_path = "/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/controllerCode/ch32v305_controller/build/ch32v305_controller_20260711.bin"
 wch_linke_firmware_path = "/Users/deqinguser/Documents/GitHub/CH32V003-Automatic-Test-Tool/controllerCode/reference/WCH-LinkE-APP-IAP.bin"
 
 HUB_VID = 0x1A86
@@ -125,6 +126,14 @@ def find_ch32v305_controller_port():
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Prepare CH334 hub board (CH32V305 controller / WCH-LinkE).")
+    parser.add_argument(
+        "--force-reflash-controller",
+        action="store_true",
+        help="Reflash CH32V305 controller firmware even if already present on hub port 3",
+    )
+    args = parser.parse_args()
+
     backend = _get_usb_backend()
     if backend is None:
         print("libusb backend not found. Install libusb (e.g. brew install libusb).", file=sys.stderr)
@@ -151,10 +160,13 @@ def main():
         device = devices[3][0]
         if device["vid"] == CH32V305_CONTROLLER_VID and device["pid"] == CH32V305_CONTROLLER_PID:
             ch32v305_controller_device_already_present = True
-    if ch32v305_controller_device_already_present:
+    if ch32v305_controller_device_already_present and not args.force_reflash_controller:
         print("CH32V305 controller device already present on port 3.")
     else:
-        print("CH32V305 controller device not found on port 3.")
+        if ch32v305_controller_device_already_present:
+            print("CH32V305 controller device already present on port 3; force reflashing.")
+        else:
+            print("CH32V305 controller device not found on port 3.")
         print("Expect off board WCH-LinkE connected to pin header next to CH32V305CCT6.")
         #run minichlink -C linke -i to check if WCH-LinkE is connected, capture the output
         try:
