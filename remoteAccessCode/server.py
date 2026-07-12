@@ -351,6 +351,17 @@ def api_digital_read(body: DigitalReadBody):
     return {"ok": True, "pin": body.pin, "value": bool(value)}
 
 
+@app.post("/api/gpio/pin_input")
+def api_pin_input(body: DigitalReadBody):
+    session.require_connected()
+    session.require_idle()
+    with session.lock:
+        ok = session.tool().pin_input(body.pin, 0.5)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Pin input release failed")
+    return {"ok": True, "pin": body.pin, "mode": "input"}
+
+
 @app.post("/api/gpio/analog_write")
 def api_analog_write(body: AnalogWriteBody):
     session.require_connected()

@@ -178,7 +178,17 @@
     try {
       const res = await Api.post("/api/gpio/digital_read", { pin: gpioPin() });
       document.getElementById("gpio-result").textContent =
-        `PA${res.pin} digital = ${res.value ? "HIGH" : "LOW"}`;
+        `PA${res.pin} digital = ${res.value ? "HIGH" : "LOW"} (mode unchanged)`;
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  });
+
+  document.getElementById("btn-pin-input").addEventListener("click", async () => {
+    try {
+      await Api.post("/api/gpio/pin_input", { pin: gpioPin() });
+      document.getElementById("gpio-result").textContent =
+        `PA${gpioPin()} = INPUT (Hi-Z)`;
     } catch (e) {
       toast(e.message, "error");
     }

@@ -26,6 +26,22 @@ CH446QMatrix matrix(PC0, PC1, PC2, PC6, PC0, PC1, PC2, PC3);
 char rxSerialBuffer[32];
 uint8_t rxSerialBufferPtr = 0;
 
+/** Force PA0+p to GPIO INPUT; clear DAC ALT2 for PA4/PA5 (same idea as Init). */
+static void pinToInput(uint8_t p) {
+  if (p >= 8) {
+    return;
+  }
+  if (p == 4) {
+    pinMode(PA4_ALT2, INPUT);
+    pinMode(PA4, INPUT);
+  } else if (p == 5) {
+    pinMode(PA5_ALT2, INPUT);
+    pinMode(PA5, INPUT);
+  } else {
+    pinMode(PA0 + p, INPUT);
+  }
+}
+
 void setup() {
     SerialUSB.begin();
     matrix.init();
@@ -115,23 +131,35 @@ void loop() {
           //   }
           //   break;
           case 'R':
-          //case 'r':
+          case 'r':
+            // R: force INPUT (incl. DAC ALT2 on PA4/5) then read
+            // r: read without changing pin mode
             if (rxSerialBufferPtr == 2) {
               uint8_t pin = hexToUchar(rxSerialBuffer[1]);
               SerialUSB.print(rxSerialBuffer[0]);
               SerialUSB.print(rxSerialBuffer[1]);
               SerialUSB.print((char)':');
               if (pin < 8) {
-                // we only map PA0-PA7 to pins 0-7
-                pin = PA0 + pin;
-                uint8_t pinStatus = digitalRead(pin);
+                if (rxSerialBuffer[0] == 'R') {
+                  pinToInput(pin);
+                }
+                uint8_t pinStatus = digitalRead(PA0 + pin);
                 SerialUSB.println((char)('0' + pinStatus));
-                // if (rxSerialBuffer[0] == 'R') {
-                //   digitalPinSubscribed = 255;
-                // } else {
-                //   digitalPinSubscribed = pin;
-                //   digitalPinSubscribedLastPrintTime = millis();
-                // }
+              } else {
+                SerialUSB.println("not valid");
+              }
+            }
+            break;
+          case 'F':
+            // Release pin to INPUT without touching the matrix
+            if (rxSerialBufferPtr == 2) {
+              uint8_t pin = hexToUchar(rxSerialBuffer[1]);
+              SerialUSB.print('F');
+              SerialUSB.print(rxSerialBuffer[1]);
+              SerialUSB.print((char)':');
+              if (pin < 8) {
+                pinToInput(pin);
+                SerialUSB.println("in");
               } else {
                 SerialUSB.println("not valid");
               }

@@ -263,8 +263,9 @@ class Ch32V305CCT6_test_tool:
             return True
         
     def digital_read(self, pin, wait_for_input_time=1):
-        command = f"R{pin:01d}\n"
-        responseHeader = f"R{pin:01d}:"
+        """Read without changing pin mode (firmware `r`)."""
+        command = f"r{pin:01d}\n"
+        responseHeader = f"r{pin:01d}:"
         write_response = self.write_string_wait_for_response(command, responseHeader, wait_for_input_time)
         if (wait_for_input_time == 0):
             return None
@@ -277,7 +278,39 @@ class Ch32V305CCT6_test_tool:
                     return None
             else:
                 return None
-    
+
+    def digital_read_as_input(self, pin, wait_for_input_time=1):
+        """Force INPUT (incl. DAC ALT2 on PA4/5) then read (firmware `R`)."""
+        command = f"R{pin:01d}\n"
+        responseHeader = f"R{pin:01d}:"
+        write_response = self.write_string_wait_for_response(command, responseHeader, wait_for_input_time)
+        if (wait_for_input_time == 0):
+            return None
+        else:
+            if (len(write_response)>0):
+                try:
+                    colon_pos = write_response.find(":")
+                    if "not valid" in write_response:
+                        return None
+                    return (int(write_response[colon_pos+1])>0)
+                except:
+                    return None
+            else:
+                return None
+
+    def pin_input(self, pin, wait_for_input_time=0):
+        """Release pin to INPUT without clearing matrix (firmware `F`)."""
+        command = f"F{pin:01d}\n"
+        write_response = self.write_string_wait_for_response(command, f"F{pin:01d}:", wait_for_input_time)
+        if (wait_for_input_time == 0):
+            return True
+        else:
+            if (len(write_response)==0):
+                return False
+            if ("not valid" in write_response):
+                return False
+            return True
+
     def logic_analyzer_capture_start(self, rate_hz, sample_count, wait_for_input_time=1):
         command = f"L{rate_hz:08X}{sample_count:08X}\n"
         if (self.serial_port is None):
