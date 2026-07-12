@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CH32V003 Test Jig — Remote Access</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <div>
+        <h1>CH32V003 Test Jig</h1>
+        <p class="subtitle">Remote access console</p>
+      </div>
+    </div>
+    <div class="status-block">
+      <div id="conn-indicator" class="conn-pill offline">Disconnected</div>
+      <button id="btn-reconnect" class="btn ghost" type="button">Reconnect</button>
+      <button id="btn-init" class="btn ghost" type="button">Init matrix</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <nav class="modes" id="mode-nav">
+        <button type="button" class="mode active" data-mode="matrix">Matrix</button>
+        <button type="button" class="mode" data-mode="gpio">GPIO</button>
+        <button type="button" class="mode" data-mode="capture">Capture</button>
+        <button type="button" class="mode" data-mode="firmware">Firmware</button>
+      </nav>
+
+      <section class="panel" id="panel-matrix">
+        <h2>Connection matrix</h2>
+        <p class="hint">Select an X net and a controller Y pin, then connect or disconnect.</p>
+        <div class="field">
+          <label>X net</label>
+          <div id="sel-x" class="chip-value">—</div>
+        </div>
+        <div class="field">
+          <label>Y (controller)</label>
+          <div id="sel-y" class="chip-value">—</div>
+        </div>
+        <div class="btn-row">
+          <button id="btn-connect" class="btn primary" type="button">Connect</button>
+          <button id="btn-disconnect" class="btn" type="button">Disconnect</button>
+        </div>
+        <h3>Active links</h3>
+        <ul id="conn-list" class="conn-list"></ul>
+      </section>
+
+      <section class="panel hidden" id="panel-gpio">
+        <h2>Controller GPIO</h2>
+        <p class="hint">PA0–PA7 on the CH32V305. PA4/PA5 support 12-bit DAC write.</p>
+        <div class="field">
+          <label>Pin</label>
+          <select id="gpio-pin"></select>
+        </div>
+        <div class="btn-row">
+          <button id="btn-dig-high" class="btn" type="button">Write High</button>
+          <button id="btn-dig-low" class="btn" type="button">Write Low</button>
+          <button id="btn-dig-read" class="btn primary" type="button">Digital Read</button>
+        </div>
+        <div class="field">
+          <label>Analog write (0–4095)</label>
+          <div class="inline">
+            <input id="analog-value" type="number" min="0" max="4095" value="2048" />
+            <button id="btn-ana-write" class="btn" type="button">Write</button>
+            <button id="btn-ana-read" class="btn primary" type="button">Read</button>
+          </div>
+        </div>
+        <div id="gpio-result" class="result-box">Ready</div>
+      </section>
+
+      <section class="panel hidden" id="panel-capture">
+        <h2>Capture</h2>
+        <div class="tabs">
+          <button type="button" class="tab active" data-cap="digital">Digital LA</button>
+          <button type="button" class="tab" data-cap="analog">Analog</button>
+        </div>
+        <div id="cap-digital">
+          <div class="field">
+            <label>Sample rate (Hz)</label>
+            <input id="la-rate" type="number" min="1" value="100000" />
+          </div>
+          <div class="field">
+            <label>Sample count</label>
+            <input id="la-count" type="number" min="1" max="131072" value="4096" />
+          </div>
+          <button id="btn-la-start" class="btn primary" type="button">Start digital capture</button>
+        </div>
+        <div id="cap-analog" class="hidden">
+          <div class="field">
+            <label>Sample rate (Hz)</label>
+            <input id="an-rate" type="number" min="1" value="10000" />
+          </div>
+          <div class="field">
+            <label>Time samples</label>
+            <input id="an-count" type="number" min="1" max="65536" value="2048" />
+          </div>
+          <div class="field">
+            <label>Channels</label>
+            <div id="an-channels" class="channel-grid"></div>
+          </div>
+          <button id="btn-an-start" class="btn primary" type="button">Start analog capture</button>
+        </div>
+        <div id="capture-status" class="result-box">Idle</div>
+      </section>
+
+      <section class="panel hidden" id="panel-firmware">
+        <h2>Firmware upload</h2>
+        <p class="hint">Uploads a .bin/.hex, routes SWIO through the matrix, and flashes the DUT via WCH-LinkE.</p>
+        <div id="dropzone" class="dropzone">
+          <p>Drop firmware here or</p>
+          <label class="btn primary file-label">
+            Choose file
+            <input id="fw-file" type="file" accept=".bin,.hex" hidden />
+          </label>
+          <p id="fw-name" class="file-name">No file selected</p>
+        </div>
+        <button id="btn-flash" class="btn primary" type="button" disabled>Flash DUT</button>
+        <div id="fw-status" class="result-box">Ready</div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="board-card" id="board-card">
+        <div class="board-header">
+          <h2>Board map</h2>
+          <span class="muted" id="busy-label"></span>
+        </div>
+        <div class="board-stack">
+          <div class="board-row">
+            <h3>Controller Y (PA0–7)</h3>
+            <div class="net-row" id="y-nets"></div>
+          </div>
+          <div class="board-row board-row-chip">
+            <h3>CH32V003 SSOP20</h3>
+            <div class="ssop" id="ssop"></div>
+          </div>
+          <div class="board-row">
+            <h3>Pin header (X0–X6)</h3>
+            <div class="net-row" id="probe-nets"></div>
+          </div>
+          <div class="board-row">
+            <h3>LinkE</h3>
+            <div class="net-row" id="linke-nets"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wave-card" id="wave-card">
+        <div class="board-header">
+          <h2>Waveform</h2>
+          <div class="wave-tools">
+            <button id="btn-fit" class="btn ghost" type="button">Fit</button>
+            <button id="btn-reset-view" class="btn ghost" type="button">Reset</button>
+            <span class="muted">Scroll to zoom · drag to pan</span>
+          </div>
+        </div>
+        <canvas id="wave-canvas" width="1200" height="420"></canvas>
+        <div id="wave-empty" class="wave-empty">No capture yet — run a digital or analog capture to view signals here.</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/matrix.js"></script>
+  <script src="/static/js/waveform.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
