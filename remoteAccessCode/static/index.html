@@ -82,8 +82,8 @@
         </div>
         <div id="cap-digital">
           <div class="field">
-            <label>Sample rate (Hz)</label>
-            <input id="la-rate" type="number" min="1" value="100000" />
+            <label>Sample rate (Hz) — max 14400000</label>
+            <input id="la-rate" type="number" min="1" max="14400000" value="100000" />
           </div>
           <div class="field">
             <label>Sample count</label>
@@ -93,8 +93,8 @@
         </div>
         <div id="cap-analog" class="hidden">
           <div class="field">
-            <label>Sample rate (Hz)</label>
-            <input id="an-rate" type="number" min="1" value="10000" />
+            <label>Sample rate (Hz) — max 35714 (1 ch; lower with more channels)</label>
+            <input id="an-rate" type="number" min="1" max="35714" value="10000" />
           </div>
           <div class="field">
             <label>Time samples</label>
