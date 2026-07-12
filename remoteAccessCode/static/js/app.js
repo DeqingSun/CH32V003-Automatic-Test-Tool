@@ -70,7 +70,8 @@
     chGrid.innerHTML = "";
     for (let i = 0; i < 8; i++) {
       const label = document.createElement("label");
-      label.innerHTML = `<input type="checkbox" value="${i}" ${i < 2 ? "checked" : ""} /> PA${i}`;
+      /* Default PA7 — matches common blink / SWIO Y pin in this jig. */
+      label.innerHTML = `<input type="checkbox" value="${i}" ${i === 7 ? "checked" : ""} /> PA${i}`;
       chGrid.appendChild(label);
     }
 

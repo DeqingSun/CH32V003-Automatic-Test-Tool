@@ -27,7 +27,9 @@ static const uint32_t AC_TIMER_CLK_HZ = 144000000UL;
 static const uint32_t AC_MIN_PERIOD_TICKS = 10U;
 static const uint16_t AC_DMA_MAX_CHUNK = 65535U;
 static const uint32_t AC_ADC_CLK_HZ = 9000000UL;
-static const uint32_t AC_ADC_CYCLES_PER_CH = 20U;
+/* Sample 239.5 + conversion ~12.5 ≈ 252 cycles/channel @ 9 MHz ADC clk.
+ * Longer sample helps CH446Q switch-matrix source impedance. */
+static const uint32_t AC_ADC_CYCLES_PER_CH = 252U;
 
 static uint8_t acPopcount(uint8_t mask) {
   uint8_t count = 0;
@@ -103,11 +105,14 @@ static bool acValidateRate(uint32_t rateHz, uint8_t numChannels, uint32_t *actua
 
 static void acConfigureAnalogInputs(uint8_t channelMask) {
   RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+  /* Disable DAC alternate modes that steal PA4/PA5 from ADC. */
   pinMode(PA4_ALT2, INPUT);
   pinMode(PA5_ALT2, INPUT);
   for (uint8_t i = 0; i < 8; i++) {
     if (channelMask & (1U << i)) {
-      pinMode(PA0 + i, INPUT);
+      /* Must be AIN — digital INPUT leaves the schmitt buffer on and
+       * ADC reads are often stuck at 0 (esp. after digital LA). */
+      pinMode(PA0 + i, INPUT_ANALOG);
     }
   }
 }
@@ -126,27 +131,30 @@ static void acConfigureAdc(uint8_t channelMask, uint8_t numChannels) {
   ADC_InitTypeDef adcInit;
   ADC_StructInit(&adcInit);
   adcInit.ADC_Mode = ADC_Mode_Independent;
-  adcInit.ADC_ScanConvMode = ENABLE;
+  adcInit.ADC_ScanConvMode = (numChannels > 1) ? ENABLE : DISABLE;
   adcInit.ADC_ContinuousConvMode = DISABLE;
   adcInit.ADC_ExternalTrigConv = ADC_ExternalTrigConv_T3_TRGO;
   adcInit.ADC_DataAlign = ADC_DataAlign_Right;
   adcInit.ADC_NbrOfChannel = numChannels;
+  adcInit.ADC_OutputBuffer = ADC_OutputBuffer_Enable;
   ADC_Init(ADC1, &adcInit);
 
   for (uint8_t rank = 0; rank < numChannels; rank++) {
     ADC_RegularChannelConfig(ADC1, channels[rank], rank + 1,
-                             ADC_SampleTime_7Cycles5);
+                             ADC_SampleTime_239Cycles5);
   }
 
   ADC_DMACmd(ADC1, ENABLE);
   ADC_Cmd(ADC1, ENABLE);
 
+  ADC_BufferCmd(ADC1, DISABLE);
   ADC_ResetCalibration(ADC1);
   while (ADC_GetResetCalibrationStatus(ADC1)) {
   }
   ADC_StartCalibration(ADC1);
   while (ADC_GetCalibrationStatus(ADC1)) {
   }
+  ADC_BufferCmd(ADC1, ENABLE);
 
   ADC_ExternalTrigConvCmd(ADC1, ENABLE);
 }
@@ -278,10 +286,9 @@ AnalogCaptureResult analogCaptureStart(uint32_t rateHz, uint32_t timeSamples,
 
   acConfigureAnalogInputs(channelMask);
 
-  if (!ac_hw_initialized) {
-    acInitDmaChannel();
-    ac_hw_initialized = true;
-  }
+  /* Re-init DMA every capture — ADC_DeInit can leave Channel1 stale. */
+  acInitDmaChannel();
+  ac_hw_initialized = true;
 
   acConfigureAdc(channelMask, numChannels);
   acInitTim3(rateHz);

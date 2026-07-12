@@ -100,9 +100,10 @@
             <input id="an-count" type="number" min="1" max="65536" value="2048" />
           </div>
           <div class="field">
-            <label>Channels</label>
+            <label>Channels (must match matrix Y / 305_PAx)</label>
             <div id="an-channels" class="channel-grid"></div>
           </div>
+          <p class="hint">Pins must be in analog mode on the controller — select the PA connected to your DUT net (e.g. PD0→PA7 → check PA7).</p>
           <button id="btn-an-start" class="btn primary" type="button">Start analog capture</button>
         </div>
         <div id="capture-status" class="result-box">Idle</div>
