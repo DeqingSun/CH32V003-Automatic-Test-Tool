@@ -365,13 +365,17 @@
     }
 
     if (ws) {
-      ws.onmessage = (ev) => {
+      ws.onmessage = async (ev) => {
         const msg = JSON.parse(ev.data);
         if (msg.type === "status") {
           statusEl.textContent = `State: ${msg.status.state || "?"}`;
         } else if (msg.type === "done") {
           statusEl.textContent = `Done · ${msg.result.sample_count} samples @ ${msg.result.rate_hz} Hz`;
-          applyResult(msg.result);
+          try {
+            await applyResult(msg.result);
+          } catch {
+            /* ignore apply errors */
+          }
           toast("Capture complete", "ok");
           lastBusy = "idle";
           ws.close();
@@ -396,7 +400,11 @@
           clearInterval(pollTimer);
           pollTimer = null;
           const result = await Api.get(resultPath);
-          applyResult(result);
+          try {
+            await applyResult(result);
+          } catch {
+            /* ignore */
+          }
           toast("Capture complete", "ok");
           lastBusy = "idle";
           if (ws && ws.readyState === WebSocket.OPEN) ws.close();
@@ -428,6 +436,19 @@
     }
   });
 
+  async function restoreAnalogChannels(channelMask) {
+    for (let i = 0; i < 8; i++) {
+      if (!(channelMask & (1 << i))) continue;
+      try {
+        await Api.post("/api/gpio/pin_input", { pin: i });
+        pinMode[i] = "input";
+        pinOutValue[i] = false;
+      } catch {
+        /* ignore — firmware may already have restored INPUT */
+      }
+    }
+  }
+
   document.getElementById("btn-an-start").addEventListener("click", async () => {
     const rate_hz = Number(document.getElementById("an-rate").value);
     const sample_count = Number(document.getElementById("an-count").value);
@@ -444,8 +465,9 @@
       clearAnalogChannels(channel_mask);
       lastBusy = "analog";
       syncPinIoMarkers(true);
-      watchCapture("/ws/analog", "/api/analog/status", "/api/analog/result", (r) => {
+      watchCapture("/ws/analog", "/api/analog/status", "/api/analog/result", async (r) => {
         WaveformViewer.setAnalog(r);
+        await restoreAnalogChannels(channel_mask);
       });
     } catch (e) {
       toast(e.message, "error");

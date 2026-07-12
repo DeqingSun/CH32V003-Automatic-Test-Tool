@@ -390,9 +390,7 @@ def api_digital_read_many(body: DigitalReadManyBody):
         for pin in pins:
             value = tool.digital_read(pin, 0.08)
             if value is None:
-                raise HTTPException(
-                    status_code=500, detail=f"Digital read failed on PA{pin}"
-                )
+                continue  # skip failed pin; others still update
             values[str(pin)] = bool(value)
     return {"ok": True, "values": values}
 

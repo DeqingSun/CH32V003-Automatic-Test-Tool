@@ -117,6 +117,24 @@ static void acConfigureAnalogInputs(uint8_t channelMask) {
   }
 }
 
+/* Return captured pins to digital INPUT so GPIO IDR / `r` reads work again. */
+static void acRestoreDigitalInputs(uint8_t channelMask) {
+  for (uint8_t i = 0; i < 8; i++) {
+    if (!(channelMask & (1U << i))) {
+      continue;
+    }
+    if (i == 4) {
+      pinMode(PA4_ALT2, INPUT);
+      pinMode(PA4, INPUT);
+    } else if (i == 5) {
+      pinMode(PA5_ALT2, INPUT);
+      pinMode(PA5, INPUT);
+    } else {
+      pinMode(PA0 + i, INPUT);
+    }
+  }
+}
+
 static void acConfigureAdc(uint8_t channelMask, uint8_t numChannels) {
   uint8_t channels[8];
   uint8_t count = 0;
@@ -319,6 +337,9 @@ AnalogCapturePollState analogCapturePoll(Stream &out) {
     return AC_POLL_RUNNING;
   }
 
+  /* Capture buffer is complete — restore digital INPUT before upload/idle. */
+  acRestoreDigitalInputs(ac_channel_mask);
+
   out.print("M:OK,");
   out.print(ac_time_samples);
   out.print(",");
@@ -427,8 +448,11 @@ uint16_t readAdcChannel(uint8_t channel) {
   uint32_t start = millis();
   while (ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC) == RESET) {
     if ((millis() - start) > 20U) {
+      acRestoreDigitalInputs(1U << channel);
       return 0;
     }
   }
-  return ADC_GetConversionValue(ADC1) & 0x0FFFU;
+  uint16_t value = ADC_GetConversionValue(ADC1) & 0x0FFFU;
+  acRestoreDigitalInputs(1U << channel);
+  return value;
 }
