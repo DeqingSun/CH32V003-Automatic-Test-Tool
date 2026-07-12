@@ -17,7 +17,7 @@ const Api = (() => {
     }
 
     try {
-      const res = await fetch(path, opts);
+      const res = await fetch(path, { ...opts, credentials: "include" });
       let data = null;
       const text = await res.text();
       if (text) {

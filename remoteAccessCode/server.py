@@ -10,12 +10,13 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -25,6 +26,13 @@ AUTO_TEST = ROOT.parent / "autoTestCode"
 sys.path.insert(0, str(AUTO_TEST))
 
 from lib.ch32v003_test_target import Ch32V003_test_target  # noqa: E402
+from access_queue import (  # noqa: E402
+    CLIENT_COOKIE,
+    access,
+    get_client_id,
+    require_holder,
+    set_client_cookie,
+)
 
 STATIC_DIR = ROOT / "static"
 PORT = int(os.environ.get("REMOTE_ACCESS_PORT", "8000"))
@@ -163,6 +171,20 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="CH32V003 Remote Access", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def ensure_client_cookie(request: Request, call_next):
+    client_id = request.cookies.get(CLIENT_COOKIE) or str(uuid.uuid4())
+    request.state.client_id = client_id
+    response = await call_next(request)
+    if CLIENT_COOKIE not in request.cookies:
+        set_client_cookie(response, client_id)
+    return response
+
+
+def _require_control(request: Request) -> str:
+    return require_holder(request, session.busy)
+
+
 # ---- request models ----
 
 class MatrixConnectBody(BaseModel):
@@ -257,13 +279,15 @@ def analog_result_payload(result: dict[str, Any]) -> dict[str, Any]:
 # ---- status / pins ----
 
 @app.get("/api/status")
-def api_status():
+def api_status(request: Request):
     port = None
     if session.is_serial_open():
         try:
             port = session.tool().serial_port.port
         except Exception:
             port = None
+    client_id = get_client_id(request)
+    access_info = access.snapshot(client_id, session.busy)
     return {
         "connected": session.connected and session.is_serial_open(),
         "serial_number": "CH32V30x",
@@ -272,11 +296,34 @@ def api_status():
         "busy": session.busy,
         "la": session.la_status,
         "analog": session.analog_status,
+        "access": access_info,
     }
 
 
+@app.post("/api/access/claim")
+def api_access_claim(request: Request):
+    client_id = get_client_id(request)
+    info = access.claim(client_id, session.busy)
+    return {"ok": True, "access": info}
+
+
+@app.post("/api/access/heartbeat")
+def api_access_heartbeat(request: Request):
+    client_id = get_client_id(request)
+    info = access.heartbeat(client_id, session.busy)
+    return {"ok": True, "access": info}
+
+
+@app.post("/api/access/leave")
+def api_access_leave(request: Request):
+    client_id = get_client_id(request)
+    info = access.leave(client_id, session.busy)
+    return {"ok": True, "access": info}
+
+
 @app.post("/api/reconnect")
-def api_reconnect():
+def api_reconnect(request: Request):
+    _require_control(request)
     session.require_idle()
     ok = session.reconnect()
     if not ok:
@@ -303,7 +350,8 @@ def api_pins():
 # ---- matrix ----
 
 @app.post("/api/init")
-def api_init():
+def api_init(request: Request):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     with session.lock:
@@ -320,7 +368,8 @@ def api_matrix_state():
 
 
 @app.post("/api/matrix/connect")
-def api_matrix_connect(body: MatrixConnectBody):
+def api_matrix_connect(request: Request, body: MatrixConnectBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     x = session.resolve_x(body.x_name)
@@ -334,7 +383,8 @@ def api_matrix_connect(body: MatrixConnectBody):
 
 
 @app.post("/api/matrix/disconnect")
-def api_matrix_disconnect(body: MatrixConnectBody):
+def api_matrix_disconnect(request: Request, body: MatrixConnectBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     x = session.resolve_x(body.x_name)
@@ -350,7 +400,8 @@ def api_matrix_disconnect(body: MatrixConnectBody):
 # ---- GPIO ----
 
 @app.post("/api/gpio/digital_write")
-def api_digital_write(body: DigitalWriteBody):
+def api_digital_write(request: Request, body: DigitalWriteBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     with session.lock:
@@ -361,7 +412,8 @@ def api_digital_write(body: DigitalWriteBody):
 
 
 @app.post("/api/gpio/digital_read")
-def api_digital_read(body: DigitalReadBody):
+def api_digital_read(request: Request, body: DigitalReadBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     with session.lock:
@@ -372,8 +424,9 @@ def api_digital_read(body: DigitalReadBody):
 
 
 @app.post("/api/gpio/digital_read_many")
-def api_digital_read_many(body: DigitalReadManyBody):
+def api_digital_read_many(request: Request, body: DigitalReadManyBody):
     """Batch mode-preserving reads (`r`) with short waits for UI polling."""
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     pins = []
@@ -396,7 +449,8 @@ def api_digital_read_many(body: DigitalReadManyBody):
 
 
 @app.post("/api/gpio/pin_input")
-def api_pin_input(body: DigitalReadBody):
+def api_pin_input(request: Request, body: DigitalReadBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     with session.lock:
@@ -407,7 +461,8 @@ def api_pin_input(body: DigitalReadBody):
 
 
 @app.post("/api/gpio/analog_write")
-def api_analog_write(body: AnalogWriteBody):
+def api_analog_write(request: Request, body: AnalogWriteBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     with session.lock:
@@ -418,7 +473,8 @@ def api_analog_write(body: AnalogWriteBody):
 
 
 @app.post("/api/gpio/analog_read")
-def api_analog_read(body: AnalogReadBody):
+def api_analog_read(request: Request, body: AnalogReadBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     with session.lock:
@@ -463,6 +519,7 @@ def _run_la_capture(rate_hz: int, sample_count: int) -> None:
         session.la_result = None
     finally:
         session.busy = "idle"
+        access.tick("idle")
 
 
 def _run_analog_capture(rate_hz: int, sample_count: int, channel_mask: int) -> None:
@@ -500,10 +557,12 @@ def _run_analog_capture(rate_hz: int, sample_count: int, channel_mask: int) -> N
         session.analog_result = None
     finally:
         session.busy = "idle"
+        access.tick("idle")
 
 
 @app.post("/api/la/start")
-def api_la_start(body: LaStartBody):
+def api_la_start(request: Request, body: LaStartBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     session.busy = "la"
@@ -532,7 +591,8 @@ def api_la_result():
 
 
 @app.post("/api/analog/start")
-def api_analog_start(body: AnalogStartBody):
+def api_analog_start(request: Request, body: AnalogStartBody):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     session.busy = "analog"
@@ -624,7 +684,8 @@ def api_firmware_samples():
 
 
 @app.post("/api/firmware/upload")
-async def api_firmware_upload(file: UploadFile = File(...)):
+async def api_firmware_upload(request: Request, file: UploadFile = File(...)):
+    _require_control(request)
     session.require_connected()
     session.require_idle()
     name = file.filename or "firmware.bin"
@@ -650,6 +711,7 @@ async def api_firmware_upload(file: UploadFile = File(...)):
         return {"ok": True, "filename": name}
     finally:
         session.busy = "idle"
+        access.tick("idle")
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)

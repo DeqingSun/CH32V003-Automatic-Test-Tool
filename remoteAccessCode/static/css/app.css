@@ -104,6 +104,64 @@ button, input, select {
   background: #2c2414;
 }
 
+.access-pill {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-family: var(--mono);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.access-pill.holder {
+  color: var(--ok);
+  border-color: #3d6a42;
+}
+
+.access-pill.waiting {
+  color: var(--warn);
+  border-color: #6a5530;
+}
+
+.access-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 16, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.access-overlay.hidden {
+  display: none;
+}
+
+.access-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem 1.75rem;
+  max-width: 420px;
+  text-align: center;
+}
+
+.access-card h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.2rem;
+}
+
+.access-wait-msg {
+  margin: 0 0 0.75rem;
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 340px 1fr;

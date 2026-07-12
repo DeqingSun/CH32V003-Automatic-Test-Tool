@@ -5,8 +5,11 @@
   let captureKind = "digital";
   let pollTimer = null;
   let ioPollTimer = null;
+  let accessHeartbeatTimer = null;
   let lastBusy = "idle";
   let matrixConnections = [];
+  /** @type {{role:string, position:number|null, queue_length:number, seconds_left:number|null, slot_sec:number}|null} */
+  let accessState = null;
 
   /** @type {(null|'output'|'input')[]} */
   const pinMode = Array(8).fill(null);
@@ -19,6 +22,77 @@
     el.className = "toast" + (kind ? ` ${kind}` : "");
     clearTimeout(toast._t);
     toast._t = setTimeout(() => el.classList.add("hidden"), 3500);
+  }
+
+  function isHolder() {
+    return accessState && accessState.role === "holder";
+  }
+
+  function applyAccessState(info) {
+    if (!info) return;
+    accessState = info;
+    const label = document.getElementById("access-label");
+    const overlay = document.getElementById("access-overlay");
+    const waitMsg = document.getElementById("access-wait-msg");
+    const leaveBtn = document.getElementById("btn-leave");
+
+    if (info.role === "holder") {
+      overlay.classList.add("hidden");
+      label.className = "access-pill holder";
+      if (info.seconds_left != null) {
+        label.textContent = `Control: ${info.seconds_left}s left · ${info.queue_length} waiting`;
+      } else {
+        label.textContent = "You have control";
+      }
+      leaveBtn.disabled = false;
+    } else if (info.role === "waiting") {
+      overlay.classList.remove("hidden");
+      label.className = "access-pill waiting";
+      const pos = info.position || "?";
+      const total = info.queue_length || 0;
+      label.textContent = `Waiting #${pos} of ${total}`;
+      waitMsg.textContent = `You are #${pos} of ${total} waiting`;
+      leaveBtn.disabled = false;
+    } else {
+      overlay.classList.remove("hidden");
+      label.className = "access-pill";
+      label.textContent = "No access";
+      waitMsg.textContent = "Claiming a spot in the queue…";
+      leaveBtn.disabled = true;
+    }
+  }
+
+  async function claimAccess() {
+    const res = await Api.post("/api/access/claim", {});
+    applyAccessState(res.access);
+    return res.access;
+  }
+
+  async function heartbeatAccess() {
+    try {
+      const res = await Api.post("/api/access/heartbeat", {});
+      applyAccessState(res.access);
+      return res.access;
+    } catch {
+      return null;
+    }
+  }
+
+  function leaveAccessBeacon() {
+    try {
+      navigator.sendBeacon("/api/access/leave");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function leaveAccess() {
+    try {
+      const res = await Api.post("/api/access/leave", {});
+      applyAccessState(res.access || { role: "none", position: null, queue_length: 0, seconds_left: null, slot_sec: 60 });
+    } catch {
+      leaveAccessBeacon();
+    }
   }
 
   function setMode(mode) {
@@ -86,6 +160,7 @@
       const st = await Api.get("/api/status");
       const pill = document.getElementById("conn-indicator");
       const busy = document.getElementById("busy-label");
+      if (st.access) applyAccessState(st.access);
       if (!st.connected) {
         pill.className = "conn-pill offline";
         pill.textContent = "Disconnected";
@@ -133,6 +208,7 @@
   const IO_POLL_TIMEOUT_MS = 2000;
 
   async function pollPinLevels() {
+    if (!isHolder()) return;
     if (lastBusy !== "idle") {
       syncPinIoMarkers(true);
       return;
@@ -144,6 +220,7 @@
     }
     try {
       const st = await Api.get("/api/status", { timeout: IO_POLL_TIMEOUT_MS });
+      if (st && st.access) applyAccessState(st.access);
       if (!st || !st.connected || (st.busy && st.busy !== "idle")) {
         lastBusy = (st && st.busy) || "idle";
         syncPinIoMarkers(true);
@@ -163,7 +240,10 @@
           MatrixView.setPinIoState(i, null, false);
         }
       }
-    } catch {
+    } catch (e) {
+      if (e && e.status === 423) {
+        await heartbeatAccess();
+      }
       /* ignore transient poll errors (busy race, disconnect, timeout) */
     }
   }
@@ -200,6 +280,7 @@
       chGrid.appendChild(label);
     }
 
+    await claimAccess();
     await refreshStatus();
     try {
       await refreshMatrix();
@@ -209,6 +290,8 @@
     await loadFirmwareSamples();
 
     setInterval(refreshStatus, 2000);
+    if (accessHeartbeatTimer) clearInterval(accessHeartbeatTimer);
+    accessHeartbeatTimer = setInterval(heartbeatAccess, 3000);
     scheduleIoPoll();
   }
 
@@ -228,6 +311,31 @@
     document.getElementById("cap-analog").classList.toggle("hidden", captureKind !== "analog");
   });
 
+  document.getElementById("btn-leave").addEventListener("click", async () => {
+    await leaveAccess();
+    toast("Left the queue", "ok");
+    await claimAccess();
+  });
+
+  window.addEventListener("pagehide", leaveAccessBeacon);
+  window.addEventListener("beforeunload", leaveAccessBeacon);
+
+  async function handleControlError(e) {
+    if (e && e.status === 423) {
+      await heartbeatAccess();
+      const detail = (e.data && e.data.detail) || e.message;
+      if (detail === "expired") {
+        toast("Your control time expired", "error");
+      } else if (detail === "waiting") {
+        toast("Waiting in queue — no control yet", "error");
+      } else {
+        toast("You do not have control", "error");
+      }
+      return;
+    }
+    toast(e.message, "error");
+  }
+
   document.getElementById("btn-reconnect").addEventListener("click", async () => {
     try {
       await Api.post("/api/reconnect", {});
@@ -235,7 +343,7 @@
       await refreshStatus();
       await refreshMatrix();
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -247,7 +355,7 @@
       clearAllPinModes();
       toast("Matrix reset", "ok");
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -263,7 +371,7 @@
       MatrixView.setConnections(matrixConnections);
       toast(`Connected ${x} ↔ ${y}`, "ok");
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -280,7 +388,7 @@
       syncPinIoMarkers(lastBusy !== "idle");
       toast(`Disconnected ${x} ↔ ${y}`, "ok");
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -295,7 +403,7 @@
       setPinOutput(pin, true);
       document.getElementById("gpio-result").textContent = `PA${pin} = HIGH`;
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -306,7 +414,7 @@
       setPinOutput(pin, false);
       document.getElementById("gpio-result").textContent = `PA${pin} = LOW`;
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -316,7 +424,7 @@
       document.getElementById("gpio-result").textContent =
         `PA${res.pin} digital = ${res.value ? "HIGH" : "LOW"} (mode unchanged)`;
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -328,7 +436,7 @@
       document.getElementById("gpio-result").textContent =
         `PA${pin} = INPUT (Hi-Z)`;
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -343,7 +451,7 @@
       MatrixView.setPinIoState(pin, null, false);
       document.getElementById("gpio-result").textContent = `PA${pin} analog write ${value}`;
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -356,7 +464,7 @@
       MatrixView.setPinIoState(pin, null, false);
       document.getElementById("gpio-result").textContent = `PA${res.pin} ADC = ${res.value}`;
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -438,7 +546,7 @@
         WaveformViewer.setDigital(r);
       });
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -476,7 +584,7 @@
         await restoreAnalogChannels(channel_mask);
       });
     } catch (e) {
-      toast(e.message, "error");
+      await handleControlError(e);
     }
   });
 
@@ -582,7 +690,7 @@
       await refreshMatrix();
     } catch (e) {
       status.textContent = `Failed: ${e.message}`;
-      toast(e.message, "error");
+      await handleControlError(e);
       lastBusy = "idle";
     }
   });

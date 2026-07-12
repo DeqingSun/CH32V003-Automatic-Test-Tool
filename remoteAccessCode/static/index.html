@@ -16,11 +16,21 @@
       </div>
     </div>
     <div class="status-block">
+      <div id="access-label" class="access-pill">Access…</div>
       <div id="conn-indicator" class="conn-pill offline">Disconnected</div>
+      <button id="btn-leave" class="btn ghost" type="button">Leave</button>
       <button id="btn-reconnect" class="btn ghost" type="button">Reconnect</button>
       <button id="btn-init" class="btn ghost" type="button">Init matrix</button>
     </div>
   </header>
+
+  <div id="access-overlay" class="access-overlay hidden">
+    <div class="access-card">
+      <h2>Waiting for control</h2>
+      <p id="access-wait-msg" class="access-wait-msg">Joining queue…</p>
+      <p class="hint">You’ll get about 60 seconds of control when it’s your turn (while others are waiting).</p>
+    </div>
+  </div>
 
   <main class="layout">
     <aside class="sidebar">
