@@ -5,7 +5,6 @@
   let captureKind = "digital";
   let pollTimer = null;
   let ioPollTimer = null;
-  let ioPollInFlight = false;
   let lastBusy = "idle";
   let matrixConnections = [];
 
@@ -130,8 +129,10 @@
     return pins;
   }
 
+  const IO_POLL_INTERVAL_MS = 100;
+  const IO_POLL_TIMEOUT_MS = 2000;
+
   async function pollPinLevels() {
-    if (ioPollInFlight) return;
     if (lastBusy !== "idle") {
       syncPinIoMarkers(true);
       return;
@@ -141,16 +142,15 @@
       syncPinIoMarkers(false);
       return;
     }
-    ioPollInFlight = true;
     try {
-      const st = await Api.get("/api/status");
+      const st = await Api.get("/api/status", { timeout: IO_POLL_TIMEOUT_MS });
       if (!st || !st.connected || (st.busy && st.busy !== "idle")) {
         lastBusy = (st && st.busy) || "idle";
         syncPinIoMarkers(true);
         return;
       }
       lastBusy = "idle";
-      const res = await Api.post("/api/gpio/digital_read_many", { pins });
+      const res = await Api.post("/api/gpio/digital_read_many", { pins }, { timeout: IO_POLL_TIMEOUT_MS });
       for (const pin of pins) {
         if (pinMode[pin] === "output") continue;
         const high = !!(res.values && res.values[String(pin)]);
@@ -164,10 +164,16 @@
         }
       }
     } catch {
-      /* ignore transient poll errors (busy race, disconnect) */
-    } finally {
-      ioPollInFlight = false;
+      /* ignore transient poll errors (busy race, disconnect, timeout) */
     }
+  }
+
+  function scheduleIoPoll() {
+    if (ioPollTimer) clearTimeout(ioPollTimer);
+    ioPollTimer = setTimeout(async () => {
+      await pollPinLevels();
+      scheduleIoPoll();
+    }, IO_POLL_INTERVAL_MS);
   }
 
   async function boot() {
@@ -202,8 +208,7 @@
     }
 
     setInterval(refreshStatus, 2000);
-    if (ioPollTimer) clearInterval(ioPollTimer);
-    ioPollTimer = setInterval(pollPinLevels, 100);
+    scheduleIoPoll();
   }
 
   document.getElementById("mode-nav").addEventListener("click", (e) => {
