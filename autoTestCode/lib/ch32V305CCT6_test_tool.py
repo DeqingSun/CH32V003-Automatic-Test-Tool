@@ -186,6 +186,22 @@ class Ch32V305CCT6_test_tool:
         else:
             return (len(write_response)>0)
 
+    def save_matrix(self, wait_for_input_time=0):
+        command = "S\n"
+        write_response = self.write_string_wait_for_response(command, "S:", wait_for_input_time)
+        if (wait_for_input_time == 0):
+            return True
+        else:
+            return (len(write_response)>0)
+
+    def restore_matrix(self, wait_for_input_time=0):
+        command = "s\n"
+        write_response = self.write_string_wait_for_response(command, "s:", wait_for_input_time)
+        if (wait_for_input_time == 0):
+            return True
+        else:
+            return (len(write_response)>0)
+
     def connect_pins(self, pin_X, pin_305_GPIO_pin_Y, wait_for_input_time=0):
         command = f"C{pin_X:02X}{pin_305_GPIO_pin_Y:X}\n"
         write_response = self.write_string_wait_for_response(command, "C:", wait_for_input_time)

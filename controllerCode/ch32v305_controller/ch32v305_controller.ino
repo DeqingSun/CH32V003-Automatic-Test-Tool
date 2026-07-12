@@ -58,6 +58,18 @@ void loop() {
               SerialUSB.println("I:Init System");
             }
             break;
+          case 'S':
+            if (rxSerialBufferPtr == 1) {
+              matrix.saveMatrix();
+              SerialUSB.println("S:Saved");
+            }
+            break;
+          case 's':
+            if (rxSerialBufferPtr == 1) {
+              matrix.restoreMatrix();
+              SerialUSB.println("s:Restored");
+            }
+            break;
           case 'C':
           case 'c':
             //connect channels on CH446Q

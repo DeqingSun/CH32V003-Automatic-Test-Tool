@@ -90,33 +90,46 @@ class Ch32V003_test_target:
             print("Minichlink not found")
             return False
 
+        # Save user matrix, clear it, then route SWIO for programming only.
+        # Without clear, existing PA7 links (e.g. PD0/X6) short the SWIO bus.
+        if not self.test_tool.save_matrix(0.5):
+            print("Failed to save matrix")
+            return False
+        if not self.test_tool.initailize(0.5):
+            print("Failed to init matrix before flash")
+            return False
+
         #for ch32v003, the SWIO is on PD1, pin 18 on TSSOP20 package
         #we can route the SWIO to on board WCH-LINKE SWDIO via any input gpio on CH32V305
         self.test_tool.connect_pins(self.test_tool.SSOP20_PIN18_MAP, self.test_tool.Y_305_PA7, 0.5) #C117
         self.test_tool.connect_pins(self.test_tool.WCH_LINKE_SWDIO, self.test_tool.Y_305_PA7, 0.5)  #C087
 
-        #use the minichlink to flash the firmware
-        #sample command: ./toolBinary/minichlink_mac -C linke -l 2C868F06B189
-        command_minichlink = f"{minichlink} -C linke"
-        if (wch_linke_serial_number is not None):
-            command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
-        #run command and see if there is "Detected CH32V003" in the output
-        result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
-        if not (("Detected CH32V003" in result.stdout) or ("Detected CH32V003" in result.stderr)):
-            print("CH32V003 target not found")
-            # print(result.stdout)
-            # print(result.stderr)
-            return False
-
-        #flash the firmware
-        command_flash = command_minichlink + f" -w {firmware_path} 0x08000000"
-        result = subprocess.run(command_flash, shell=True, capture_output=True, text=True)
-        if not ("Image written" in result.stdout):
-            print("Firmware flashing failed")
-            return False
-
-        self.resetMatrix()
-        return True
+        ok = False
+        try:
+            #use the minichlink to flash the firmware
+            #sample command: ./toolBinary/minichlink_mac -C linke -l 2C868F06B189
+            command_minichlink = f"{minichlink} -C linke"
+            if (wch_linke_serial_number is not None):
+                command_minichlink = command_minichlink + f" -l {wch_linke_serial_number}"
+            #run command and see if there is "Detected CH32V003" in the output
+            result = subprocess.run(command_minichlink, shell=True, capture_output=True, text=True)
+            if not (("Detected CH32V003" in result.stdout) or ("Detected CH32V003" in result.stderr)):
+                print("CH32V003 target not found")
+            else:
+                #flash the firmware
+                command_flash = command_minichlink + f" -w {firmware_path} 0x08000000"
+                result = subprocess.run(command_flash, shell=True, capture_output=True, text=True)
+                if not ("Image written" in result.stdout):
+                    print("Firmware flashing failed")
+                else:
+                    ok = True
+        finally:
+            # Clear SWIO hookup and restore the user's prior matrix connections.
+            self.test_tool.initailize(0.5)
+            if not self.test_tool.restore_matrix(0.5):
+                print("Failed to restore matrix after flash")
+                ok = False
+        return ok
 
     def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1, during_capture=None):
         return self.test_tool.logic_analyzer_capture(
