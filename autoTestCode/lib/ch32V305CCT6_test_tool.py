@@ -264,22 +264,46 @@ class Ch32V305CCT6_test_tool:
     
     def logic_analyzer_capture_start(self, rate_hz, sample_count, wait_for_input_time=1):
         command = f"L{rate_hz:08X}{sample_count:08X}\n"
-        response = self.write_string_wait_for_response(command, "L:", wait_for_input_time)
-        if (len(response) == 0):
-            return {"ok": False, "error": "No response"}
-        if (response.startswith("L:ERR,")):
-            return {"ok": False, "error": response[6:]}
-        if (response.startswith("L:STARTED,")):
-            try:
-                parts = response.split(",")
-                return {
-                    "ok": True,
-                    "sample_count": int(parts[1]),
-                    "rate_hz": int(parts[2]),
-                }
-            except (IndexError, ValueError):
-                return {"ok": False, "error": "Bad STARTED line"}
-        return {"ok": False, "error": "Unexpected response: " + response}
+        if (self.serial_port is None):
+            return {"ok": False, "error": "Not connected"}
+        self.serial_port.write(command.encode("ascii"))
+        self.serial_port.flush()
+        # Drain until STARTED/ERR; ignore intermediate L: lines from older firmware.
+        # Older firmware may stream L:OK/DATA immediately (blocking capture) — treat as started.
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < wait_for_input_time):
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line.startswith("L:ERR,")):
+                    return {"ok": False, "error": line[6:]}
+                if (line.startswith("L:STARTED,")):
+                    try:
+                        parts = line.split(",")
+                        return {
+                            "ok": True,
+                            "mode": "async",
+                            "sample_count": int(parts[1]),
+                            "rate_hz": int(parts[2]),
+                        }
+                    except (IndexError, ValueError):
+                        return {"ok": False, "error": "Bad STARTED line"}
+                if (line.startswith("L:OK,")):
+                    # Blocking firmware: capture finished and upload is in progress.
+                    try:
+                        parts = line.split(",")
+                        return {
+                            "ok": True,
+                            "mode": "sync",
+                            "sample_count": int(parts[1]),
+                            "rate_hz": int(parts[2]),
+                            "_prefetch_ok": True,
+                        }
+                    except (IndexError, ValueError):
+                        return {"ok": False, "error": "Bad OK line"}
+                if (line.startswith("L:Capture")):
+                    # Older banner before OK/DATA — keep waiting.
+                    continue
+        return {"ok": False, "error": "No response"}
 
     def _logic_analyzer_process_data_line(self, line, samples):
         colon_pos = line.find(":")
@@ -288,6 +312,37 @@ class Ch32V305CCT6_test_tool:
         for token in line[colon_pos + 1:].split():
             if (len(token) == 2):
                 samples.append(int(token, 16))
+
+    def _logic_analyzer_finish_sync_upload(self, actual_sample_count, actual_rate_hz,
+                                          wait_for_input_time=5, during_capture=None,
+                                          already_in_data=False):
+        """Finish reading L:DATA ... L:END after an L:OK from blocking firmware."""
+        samples = []
+        data_started = already_in_data
+        data_done = False
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < wait_for_input_time):
+            if (during_capture is not None):
+                during_capture()
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line == "L:DATA"):
+                    data_started = True
+                    continue
+                if (line == "L:END"):
+                    data_done = True
+                    continue
+                if (data_started and not data_done):
+                    self._logic_analyzer_process_data_line(line, samples)
+            if (data_done):
+                samples_channels = [[(s >> i) & 1 for s in samples] for i in range(8)]
+                return {
+                    "ok": True,
+                    "sample_count": actual_sample_count,
+                    "rate_hz": actual_rate_hz,
+                    "samples": samples_channels,
+                }
+        return {"ok": False, "error": "Timeout waiting for sync upload"}
 
     def logic_analyzer_capture_poll(self, wait_for_input_time=0.1, during_capture=None):
         if (self.serial_port == None):
@@ -380,15 +435,89 @@ class Ch32V305CCT6_test_tool:
 
     def logic_analyzer_capture(self, rate_hz, sample_count, wait_for_input_time=1,
                                during_capture=None):
-        start = self.logic_analyzer_capture_start(rate_hz, sample_count, wait_for_input_time)
-        if (not start["ok"]):
-            return start
-        return self.logic_analyzer_capture_wait(
-            sample_count=sample_count,
-            rate_hz=rate_hz,
-            during_capture=during_capture,
-            timeout=wait_for_input_time,
-        )
+        """Capture digital LA. Supports async (STARTED+poll) and blocking firmware."""
+        if (self.serial_port is None):
+            return {"ok": False, "error": "Not connected"}
+
+        # Prefer a single streaming read that handles both firmware styles.
+        command = f"L{rate_hz:08X}{sample_count:08X}\n"
+        self.serial_port.write(command.encode("ascii"))
+        self.serial_port.flush()
+
+        if (sample_count is not None and rate_hz is not None and rate_hz > 0):
+            capture_timeout = max(float(wait_for_input_time), (sample_count / rate_hz) + 5.0)
+        else:
+            capture_timeout = max(float(wait_for_input_time), 30.0)
+
+        actual_sample_count = None
+        actual_rate_hz = None
+        samples = []
+        data_started = False
+        data_done = False
+        async_started = False
+
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < capture_timeout):
+            if (during_capture is not None):
+                during_capture()
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line.startswith("L:ERR,")):
+                    return {"ok": False, "error": line[6:]}
+                if (line.startswith("L:STARTED,")):
+                    try:
+                        parts = line.split(",")
+                        actual_sample_count = int(parts[1])
+                        actual_rate_hz = int(parts[2])
+                        async_started = True
+                    except (IndexError, ValueError):
+                        return {"ok": False, "error": "Bad STARTED line"}
+                    # Switch to poll-wait for async firmware.
+                    return self.logic_analyzer_capture_wait(
+                        sample_count=actual_sample_count,
+                        rate_hz=actual_rate_hz,
+                        during_capture=during_capture,
+                        timeout=capture_timeout,
+                    )
+                if (line.startswith("L:OK,")):
+                    try:
+                        parts = line.split(",")
+                        actual_sample_count = int(parts[1])
+                        actual_rate_hz = int(parts[2])
+                    except (IndexError, ValueError):
+                        return {"ok": False, "error": "Bad OK line"}
+                    continue
+                if (line == "L:DATA"):
+                    data_started = True
+                    continue
+                if (line == "L:END"):
+                    data_done = True
+                    continue
+                if (line.startswith("L:Capture")):
+                    continue
+                if (data_started and not data_done):
+                    self._logic_analyzer_process_data_line(line, samples)
+
+            if (actual_sample_count is not None and data_done):
+                samples_channels = [[(s >> i) & 1 for s in samples] for i in range(8)]
+                return {
+                    "ok": True,
+                    "sample_count": actual_sample_count,
+                    "rate_hz": actual_rate_hz,
+                    "samples": samples_channels,
+                }
+
+            # Async path: if started but we're somehow still here, poll.
+            if (async_started):
+                break
+
+        if (actual_sample_count is not None and data_started and not data_done):
+            return self._logic_analyzer_finish_sync_upload(
+                actual_sample_count, actual_rate_hz,
+                wait_for_input_time=5, during_capture=during_capture,
+                already_in_data=True)
+
+        return {"ok": False, "error": "Timeout"}
 
     @staticmethod
     def channel_mask_from_pins(pins):
@@ -405,23 +534,28 @@ class Ch32V305CCT6_test_tool:
 
     def analog_capture_start(self, rate_hz, sample_count, channel_mask, wait_for_input_time=1):
         command = f"M{rate_hz:08X}{sample_count:08X}{channel_mask:02X}\n"
-        response = self.write_string_wait_for_response(command, "M:", wait_for_input_time)
-        if (len(response) == 0):
-            return {"ok": False, "error": "No response"}
-        if (response.startswith("M:ERR,")):
-            return {"ok": False, "error": response[6:]}
-        if (response.startswith("M:STARTED,")):
-            try:
-                parts = response.split(",")
-                return {
-                    "ok": True,
-                    "sample_count": int(parts[1]),
-                    "rate_hz": int(parts[2]),
-                    "channel_mask": int(parts[3], 16),
-                }
-            except (IndexError, ValueError):
-                return {"ok": False, "error": "Bad STARTED line"}
-        return {"ok": False, "error": "Unexpected response: " + response}
+        if (self.serial_port is None):
+            return {"ok": False, "error": "Not connected"}
+        self.serial_port.write(command.encode("ascii"))
+        self.serial_port.flush()
+        start_time = time.monotonic()
+        while (time.monotonic() - start_time < wait_for_input_time):
+            time.sleep(0.001)
+            for line in self.check_input():
+                if (line.startswith("M:ERR,")):
+                    return {"ok": False, "error": line[6:]}
+                if (line.startswith("M:STARTED,")):
+                    try:
+                        parts = line.split(",")
+                        return {
+                            "ok": True,
+                            "sample_count": int(parts[1]),
+                            "rate_hz": int(parts[2]),
+                            "channel_mask": int(parts[3], 16),
+                        }
+                    except (IndexError, ValueError):
+                        return {"ok": False, "error": "Bad STARTED line"}
+        return {"ok": False, "error": "No response"}
 
     def _analog_capture_process_data_line(self, line, time_samples):
         colon_pos = line.find(":")
